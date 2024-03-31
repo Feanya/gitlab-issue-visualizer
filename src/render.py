@@ -11,6 +11,19 @@ weight_cluster = '1'
 opened_only = False
 
 
+def main():
+    print("Read the pickles...")
+    issues: [Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
+    epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
+    links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
+    links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+
+    print("Generate from linklist...")
+    from_linklist(issues.values(), links_related, links_blocking)
+
+    print("Done!")
+
+
 def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
@@ -334,13 +347,6 @@ def wrap_text(text: str, min_length: int) -> str:
     return text
 
 
-print("Read the pickles...")
-issues: [Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
-epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
-links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
-links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+if __name__ == "__main__":
+    main()
 
-print("Generate from linklist...")
-from_linklist(issues.values(), links_related, links_blocking)
-
-print("Done!")
