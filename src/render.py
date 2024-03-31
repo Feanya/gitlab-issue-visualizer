@@ -1,5 +1,5 @@
 import collections
-
+import tomllib
 import graphviz
 import pickle
 
@@ -10,6 +10,9 @@ weight_relations = '10'
 weight_cluster = '1'
 opened_only = False
 
+with open("../settings/config.toml", mode="rb") as filehandle:
+    config = tomllib.load(filehandle)
+
 
 def main():
     print("Read the pickles...")
@@ -18,13 +21,17 @@ def main():
     links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
     links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
 
-    print("Generate from linklist...")
-    from_linklist(issues.values(), links_related, links_blocking)
+    #print("Generate from linklist...")
+
+    print("Generate epic overview...")
+    render_epics_clustered(epics)
+    #from_linklist(issues.values(), links_related, links_blocking)
 
     print("Done!")
 
 
-def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
+def render_issues_with_links(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
+    """Render issues.svg: all issues with their epics and dependencies between the issues"""
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
                                         # overlap='vpsc',
@@ -41,19 +48,10 @@ def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: Block
                                     node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
                                     edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
-    graph_epics = graphviz.Digraph(engine='fdp',
-                                   graph_attr=dict(
-                                       sep='+15',
-                                       # scale='5',
-                                       pack='true',
-                                       fontsize='10pt',
-                                       # ratio='5',
-                                       defaultdist='15',
-                                       overlap='prism', overlap_scaling='3', ratio='0.9'
-                                   ),
-                                   node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
-                                   edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
+
+
+def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, Epic]):
     graph_clusters = graphviz.Digraph(engine='fdp',
                                       graph_attr=dict(
                                           sep='+5',
@@ -68,20 +66,81 @@ def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: Block
                                       node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
                                       edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
-    # Epics zuerst einfügen, die Relations kommen dann durch die Issues
 
-    epics_0423: [Epic] = []
-    epics_0923: [Epic] = []
-    epics_1123: [Epic] = []
-    epics_1223: [Epic] = []
-    epics_0224: [Epic] = []
-    epics_bonn: [Epic] = []
-    epics_hrw: [Epic] = []
-    epics_ude: [Epic] = []
-    epics_orga: [Epic] = []
-    epics_other: [Epic] = []
-    epics_future: [Epic] = []
-    epics_dangling: [Epic] = []
+def render_epics_clustered(epics: dict[int, Epic]):
+    graph_epics = graphviz.Digraph(engine='fdp',
+                                   graph_attr=dict(
+                                       sep='+15',
+                                       # scale='5',
+                                       pack='true',
+                                       fontsize='10pt',
+                                       # ratio='5',
+                                       defaultdist='15',
+                                       overlap='prism', overlap_scaling='3', ratio='0.9'
+                                   ),
+                                   node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
+                                   edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
+
+    # construct empty clusters
+    clusters: dict[int, [Epic]] = {c['id']: [] for c in config['clusters']}
+    epics_without_cluster: [Epic] = []
+
+    # sort epics in clusters
+    for epic in epics.values():
+        fillcolor = 'lightcyan'
+        fontcolor = 'black'
+        if epic.status == Status.CLOSED:
+            fillcolor = 'lightgray'
+
+        # determine the cluster
+        labels = epic.labels
+        cluster = None
+        for l in labels:
+            for c in config['clusters']:
+                pattern = c['pattern']
+                if pattern in l:
+                    cluster = c['id']
+        if cluster:
+            clusters.update({cluster: clusters.get(cluster) + [epic]})
+        else:
+            epics_without_cluster.append(epic)
+
+
+    #render all epics by cluster
+    cluster_info_by_id = {c['id']: c for c in config['clusters']}
+    for c_id, epics in clusters.items():
+        print(c_id, epics)
+        name = cluster_info_by_id[c_id]['pattern']
+
+        with graph_epics.subgraph(name=f"cluster{name}") as cluster_subgraph:
+            cluster_subgraph.attr(label=name)
+            for epic in epics:
+                fillcolor = 'lightcyan'
+                fontcolor = 'black'
+                if epic.status == Status.CLOSED:
+                    fillcolor = 'lightgray'
+                cluster_subgraph.node(f"{epic.uid}",
+                       "{} ({}/{})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.count_closed,
+                                           epic.count_all_issues), style='filled',
+                       color=fontcolor,
+                       fontcolor=fontcolor,
+                       URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
+                       fillcolor=fillcolor, shape='folder')
+    for epic in epics_without_cluster:
+        graph_epics.node(f"{epic.uid}",
+             "{} ({}/{})\n {}".format(graphviz.escape(wrap_text(epic.title, 30)),
+                                      epic.count_closed, epic.count_all_issues,
+                                      str(epic.labels)), style='filled',
+             color=fontcolor,
+             fontcolor=fontcolor,
+             URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
+             fillcolor=fillcolor, shape='folder')
+
+    graph_epics.render('../renders/epics', format='svg', view=False)
+
+
+def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
+
 
     for epic in epics.values():
         fillcolor = 'lightcyan'
@@ -101,65 +160,6 @@ def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: Block
         # add epic to epics graph
         labels = epic.labels
 
-        for l in labels:
-            if "04'23" in l:
-                epics_0423.append(epic)
-            elif "Bonn" in l:
-                epics_bonn.append(epic)
-            elif "UDE" in l:
-                epics_ude.append(epic)
-            elif "HRW" in l:
-                epics_hrw.append(epic)
-            elif "09'23" in l:
-                epics_0923.append(epic)
-            elif "11'23" in l:
-                epics_1123.append(epic)
-            elif "12'23" in l:
-                epics_1223.append(epic)
-            elif "02'24" in l:
-                epics_0224.append(epic)
-            elif "prioritize" in l:
-                epics_dangling.append(epic)
-            elif "Zukunft" in l:
-                epics_future.append(epic)
-            elif "Mark" in l or "Projektleitung" in l:
-                epics_orga.append(epic)
-            elif "Siegen" in l or ":RW" in l:
-                epics_other.append(epic)
-            else:
-                graph_epics.node(f"{epic.uid}",
-                                 "{} ({}/{})\n {}".format(graphviz.escape(wrap_text(epic.title, 30)),
-                                                          epic.count_closed, epic.count_all_issues,
-                                                          str(epic.labels)), style='filled',
-                                 color=fontcolor,
-                                 fontcolor=fontcolor,
-                                 URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-                                 fillcolor=fillcolor, shape='folder')
-
-    clusters_new = [("Bonn", epics_bonn),
-                    ("UDE", epics_ude),
-                    ("HRW", epics_hrw),
-                    ("Orga", epics_orga),
-                    ("Andere HS", epics_other),
-                    ("Zukunft", epics_future),
-                    ("Release 04'23", epics_0423),
-                    ("Release 09'23", epics_0923),
-                    ("Release 11'23", epics_1123),
-                    ("Release 12'23", epics_1223),
-                    ("Release 02'24", epics_0224),
-                    ("Nicht priorisiert", epics_dangling)]
-
-    clusters_colors = [("Bonn", "grey82"),
-                       ("UDE", "grey82"),
-                       ("HRW", "grey82"),
-                       ("Orga", "grey82"),
-                       ("Andere HS", "grey82"),
-                       ("Zukunft", "grey82"),
-                       ("Release 04'23", "grey82"),
-                       ("Release 09'23", "grey82"),
-                       ("Release 11'23", "grey82"),
-                       ("Release 12'23", "grey82"),
-                       ("Release 02'24", "grey82")]
 
     # Mapping der Epics auf ihre IDs
     cluster_ids: [(str, [int])] = [(name, list(map(get_uid, epics))) for (name, epics) in clusters_new]
@@ -279,7 +279,6 @@ def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: Block
                           ])
 
     graph_issues.render('../renders/issues', format='svg', view=False)
-    graph_epics.render('../renders/epics', format='svg', view=False)
     graph_clusters.render('../renders/clustered_issues', format='svg', view=False)
 
 

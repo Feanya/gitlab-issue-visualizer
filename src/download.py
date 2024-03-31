@@ -173,14 +173,6 @@ def parse_links(issues_raw, issues) -> ([Link], [Link]):
                 print(f"Added: {link_conv}\n" if verbose else ".", end="")
     return links_related, links_blocking
 
-# gehört hier gar nicht hin
-def determine_cluster(labels) -> str:
-    for l in labels:
-        for c in config['clusters']:
-            pattern = c['pattern']
-            if pattern in l:
-                return c['id']
-
 
 if __name__ == "__main__":
     main()
