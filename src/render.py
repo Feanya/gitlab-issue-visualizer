@@ -1,4 +1,3 @@
-import collections
 import tomllib
 import graphviz
 import pickle
@@ -21,16 +20,14 @@ def main():
     links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
     links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
 
-    #print("Generate from linklist...")
-
-
     print("Generate epic overview...")
     render_epics_clustered(epics)
 
     print("Generate issue overview, clustered by epics...")
     render_issues_clustered_by_epic(issues, epics)
 
-    #from_linklist(issues.values(), links_related, links_blocking)
+    print("Generate issue overview...")
+    render_issues_with_links(issues, epics, links_related, links_blocking)
 
     print("Done!")
 
@@ -58,7 +55,7 @@ def cluster_epics(epics: dict[int, Epic]) -> (dict[int, [Epic]], [Epic]):
     return clusters, epics_without_cluster
 
 
-def render_issues_with_links(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
+def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], list_related: RelatedList, list_blocks: BlockList):
     """Render issues.svg: all issues with their epics and dependencies between the issues"""
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
@@ -75,6 +72,36 @@ def render_issues_with_links(issues: [Issue], list_related: RelatedList, list_bl
                                     ),
                                     node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
                                     edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
+
+    # render all epics first
+    for epic in epics.values():
+        add_epic(epic, graph_issues)
+
+    color=''
+
+    # Issues einfügen
+    for issue in issues.values():
+        if issue.status == Status.CLOSED:
+            fillcolor = 'ivory1'
+            style = 'filled'
+        else:
+            fillcolor = color
+            if issue.has_iteration:
+                style = 'filled'
+            else:
+                style = 'filled,bold'
+        add_issue(issue, graph_issues, fillcolor, style)
+
+    for link in list_related:
+        graph_issues.edge(f"{link.source.uid}",
+                          f"{link.target.uid}")
+
+    for link in list_blocks:
+        graph_issues.edge(f"{link.source.uid}",
+                          f"{link.target.uid}", dir='backward')
+
+    graph_issues.render('../renders/issues', format='svg', view=False)
+
 
 
 def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, Epic]):
@@ -148,164 +175,15 @@ def render_epics_clustered(epics: dict[int, Epic]):
     for c_id, epics in clusters.items():
         print(c_id, epics)
         name = cluster_info_by_id[c_id]['id']
-        fillcolor = 'lightcyan'
-        fontcolor = 'black'
 
         with graph_epics.subgraph(name=f"cluster{name}") as cluster_subgraph:
             cluster_subgraph.attr(label=cluster_info_by_id[c_id]['name'])
             for epic in epics:
-                fillcolor = 'lightcyan'
-                fontcolor = 'black'
-                if epic.status == Status.CLOSED:
-                    fillcolor = 'lightgray'
                 add_epic(epic, cluster_subgraph)
     for epic in epics_without_cluster:
         add_epic(epic, graph_epics)
 
     graph_epics.render('../renders/epics', format='svg', view=False)
-
-
-def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
-
-
-    for epic in epics.values():
-        fillcolor = 'lightcyan'
-        fontcolor = 'black'
-        if epic.status == Status.CLOSED:
-            fillcolor = 'lightgray'
-
-        # add epic to issue graph
-        graph_issues.node(f"{epic.uid}",
-                          "{} ({})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.uid),
-                          style='filled',
-                          color=fontcolor,
-                          fontcolor=fontcolor,
-                          URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-                          fillcolor=fillcolor, shape='folder')
-
-        # add epic to epics graph
-        labels = epic.labels
-
-
-    # Mapping der Epics auf ihre IDs
-    cluster_ids: [(str, [int])] = [(name, list(map(get_uid, epics))) for (name, epics) in clusters_new]
-
-    # epics-Graph:
-    for name, cluster in clusters_new:
-
-        with graph_epics.subgraph(name=f"cluster{name}") as c:
-            c.attr(label=name)
-            for epic in cluster:
-                fillcolor = 'lightcyan'
-                fontcolor = 'black'
-                if epic.status == Status.CLOSED:
-                    fillcolor = 'lightgray'
-                c.node(f"{epic.uid}",
-                       "{} ({}/{})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.count_closed,
-                                           epic.count_all_issues), style='filled',
-                       color=fontcolor,
-                       fontcolor=fontcolor,
-                       URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-                       fillcolor=fillcolor, shape='folder')
-
-    issues_by_cluster = collections.defaultdict(list)
-    for issue in issues:
-        issues_by_cluster[find(cluster_ids, issue.epic_id)].append(issue)
-
-    color = ''
-
-    for name in issues_by_cluster:
-        c_issues = issues_by_cluster.get(name)
-        c_epics = dict(clusters_new).get(name)
-
-        if name is not None:
-            with graph_clusters.subgraph(name=f"cluster_{name}") as c:
-                c.node_attr.update(style='filled', shape='tab')
-                c.attr(label=name)
-
-                for epic in list(c_epics):
-                    if epic.status == Status.CLOSED:
-                        fillcolor = 'lightgray'
-                    else:
-                        fillcolor = 'lightcyan'
-                    c.node(f"{epic.uid}", "{}".format(graphviz.escape(wrap_text(epic.title, 30))),
-                           style='filled',
-                           #            color=fontcolor,
-                           #            fontcolor=fontcolor,
-                           URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-                           fillcolor=fillcolor,
-                           shape='folder')
-
-                for issue in c_issues:
-                    if issue.status == Status.OPENED:
-                        c.node(f"{issue.uid}",
-                               "{}/{}\n{}".format(issue.project_id,
-                                                  issue.iid,
-                                                  graphviz.escape(wrap_text(issue.title, 30))),
-                               fillcolor='lightcyan', URL=issue.url)
-                    elif opened_only is False:
-                        c.node(f"{issue.uid}",
-                               "{}/{}\n{}".format(issue.project_id,
-                                                  issue.iid,
-                                                  graphviz.escape(wrap_text(issue.title, 30))),
-                               fillcolor='lightgray', URL=issue.url)
-                    if issue.epic_id:
-                        c.edge(f'{issue.uid}', f'{issue.epic_id}', weight=weight_epics,
-                               style='dashed',
-                               color='gray',
-                               # style='invis',
-                               URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{issue.epic_id}"
-                               )
-                        fillcolor = 'lightcyan'
-                        fontcolor = 'black'
-
-
-
-        else:
-            with graph_clusters.subgraph(name=f"cluster_rest") as c:
-                for issue in c_issues:
-                    if issue.status == Status.OPENED or opened_only == False:
-                        add_issue(issue, c, 'white')
-
-    # Issues einfügen
-    for issue in issues:
-        if issue.status == Status.CLOSED:
-            fillcolor = 'ivory1'
-            style = 'filled'
-        else:
-            fillcolor = color
-            if issue.has_iteration:
-                style = 'filled'
-            else:
-                style = 'filled,bold'
-        add_issue(issue, graph_issues, fillcolor, style)
-
-    for link in list_related:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}")
-        # graph_clusters.edge(f"{link.source.uid}",
-        #                  f"{link.target.uid}")
-
-    for link in list_blocks:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}", dir='backward')
-
-    # Postprocessing
-    # dot.unflatten(stagger=3)  # funktioniert irgendwie noch nicht
-
-    graph_clusters.edge('HS', 'cluster_Bonn')
-    graph_clusters.edge('HS', 'cluster_UDE')
-    graph_clusters.edge('HS', 'cluster_HRW')
-    graph_clusters.edge('HS', 'cluster_Andere HS')
-    graph_clusters.edges([("cluster_Release 04'23", "cluster_Release 09'23"),
-                          ("cluster_Release 09'23", "cluster_Release 11'23"),
-                          ("cluster_Release 11'23", "cluster_Release 12'23"),
-                          ("cluster_Release 12'23", "cluster_Release 02'24"),
-                          ("cluster_Release 02'24", "cluster_Zukunft"),
-                          ])
-
-    graph_issues.render('../renders/issues', format='svg', view=False)
-    graph_clusters.render('../renders/clustered_issues', format='svg', view=False)
 
 
 def add_epic(epic: Epic, dot: graphviz.Graph):
