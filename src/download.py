@@ -41,7 +41,7 @@ def download():
     gl.auth()
     print("Successful!")
 
-    group_no = config['group_no']
+    group_no = config['server']['group_no']
     project_group = gl.groups.get(group_no)
     print(f"Downloading things from {url}, group {group_no} \"{project_group.name}\"...")
 
