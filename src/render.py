@@ -23,11 +23,39 @@ def main():
 
     #print("Generate from linklist...")
 
+
     print("Generate epic overview...")
     render_epics_clustered(epics)
+
+    print("Generate issue overview, clustered by epics...")
+    render_issues_clustered_by_epic(issues, epics)
+
     #from_linklist(issues.values(), links_related, links_blocking)
 
     print("Done!")
+
+
+def cluster_epics(epics: dict[int, Epic]) -> (dict[int, [Epic]], [Epic]):
+    # construct empty clusters
+    clusters: dict[int, [Epic]] = {c['id']: [] for c in config['clusters']}
+    epics_without_cluster: [Epic] = []
+
+    # sort epics in clusters
+    for epic in epics.values():
+        # determine the cluster
+        labels = epic.labels
+        cluster = None
+        for l in labels:
+            for c in config['clusters']:
+                pattern = c['pattern']
+                if pattern in l:
+                    cluster = c['id']
+        if cluster:
+            clusters.update({cluster: clusters.get(cluster) + [epic]})
+        else:
+            epics_without_cluster.append(epic)
+
+    return clusters, epics_without_cluster
 
 
 def render_issues_with_links(issues: [Issue], list_related: RelatedList, list_blocks: BlockList):
@@ -49,8 +77,6 @@ def render_issues_with_links(issues: [Issue], list_related: RelatedList, list_bl
                                     edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
 
-
-
 def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, Epic]):
     graph_clusters = graphviz.Digraph(engine='fdp',
                                       graph_attr=dict(
@@ -65,6 +91,40 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
                                       ),
                                       node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
                                       edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
+
+    # first all issues without epics
+    with graph_clusters.subgraph(name=f"cluster_no_epic") as no_epic:
+        no_epic.attr(label='Ohne Epic')
+        for uid, issue in issues.items():
+            #add the issues that don't have an epic
+            if not issue.epic_id:
+                add_issue(issue, no_epic, 'lightgray')
+
+    clusters, epics_without_clusters = cluster_epics(epics)
+    cluster_info_by_id = {c['id']: c for c in config['clusters']}
+
+    # now subgraphs for the clusters
+    for c_id, epics in clusters.items():
+        with graph_clusters.subgraph(name=f"cluster_{c_id}") as c:
+            c.attr(label=cluster_info_by_id[c_id]['name'])
+            for epic in epics:
+                add_epic(epic, c)
+
+                # add the issues that have epics
+                if epic.issue_uids:
+                    for issue_uid in epic.issue_uids:
+                        issue = issues[issue_uid]
+                        add_issue(issue, c, 'white')
+
+
+
+    # and the epics without a cluster
+    with graph_clusters.subgraph(name=f"cluster_no_cluster") as no_cluster:
+        no_epic.attr(label='Ohne Cluster')
+        for epic in epics_without_clusters:
+            add_epic(epic, no_cluster)
+
+    graph_clusters.render('../renders/clustered_issues_by_epic', format='svg', view=False)
 
 
 def render_epics_clustered(epics: dict[int, Epic]):
@@ -81,60 +141,26 @@ def render_epics_clustered(epics: dict[int, Epic]):
                                    node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
                                    edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
-    # construct empty clusters
-    clusters: dict[int, [Epic]] = {c['id']: [] for c in config['clusters']}
-    epics_without_cluster: [Epic] = []
-
-    # sort epics in clusters
-    for epic in epics.values():
-        fillcolor = 'lightcyan'
-        fontcolor = 'black'
-        if epic.status == Status.CLOSED:
-            fillcolor = 'lightgray'
-
-        # determine the cluster
-        labels = epic.labels
-        cluster = None
-        for l in labels:
-            for c in config['clusters']:
-                pattern = c['pattern']
-                if pattern in l:
-                    cluster = c['id']
-        if cluster:
-            clusters.update({cluster: clusters.get(cluster) + [epic]})
-        else:
-            epics_without_cluster.append(epic)
-
+    clusters, epics_without_cluster = cluster_epics(epics)
 
     #render all epics by cluster
     cluster_info_by_id = {c['id']: c for c in config['clusters']}
     for c_id, epics in clusters.items():
         print(c_id, epics)
-        name = cluster_info_by_id[c_id]['pattern']
+        name = cluster_info_by_id[c_id]['id']
+        fillcolor = 'lightcyan'
+        fontcolor = 'black'
 
         with graph_epics.subgraph(name=f"cluster{name}") as cluster_subgraph:
-            cluster_subgraph.attr(label=name)
+            cluster_subgraph.attr(label=cluster_info_by_id[c_id]['name'])
             for epic in epics:
                 fillcolor = 'lightcyan'
                 fontcolor = 'black'
                 if epic.status == Status.CLOSED:
                     fillcolor = 'lightgray'
-                cluster_subgraph.node(f"{epic.uid}",
-                       "{} ({}/{})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.count_closed,
-                                           epic.count_all_issues), style='filled',
-                       color=fontcolor,
-                       fontcolor=fontcolor,
-                       URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-                       fillcolor=fillcolor, shape='folder')
+                add_epic(epic, cluster_subgraph)
     for epic in epics_without_cluster:
-        graph_epics.node(f"{epic.uid}",
-             "{} ({}/{})\n {}".format(graphviz.escape(wrap_text(epic.title, 30)),
-                                      epic.count_closed, epic.count_all_issues,
-                                      str(epic.labels)), style='filled',
-             color=fontcolor,
-             fontcolor=fontcolor,
-             URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-             fillcolor=fillcolor, shape='folder')
+        add_epic(epic, graph_epics)
 
     graph_epics.render('../renders/epics', format='svg', view=False)
 
@@ -282,13 +308,27 @@ def from_linklist(issues: [Issue], list_related: RelatedList, list_blocks: Block
     graph_clusters.render('../renders/clustered_issues', format='svg', view=False)
 
 
+def add_epic(epic: Epic, dot: graphviz.Graph):
+    fillcolor = 'lightcyan'
+    fontcolor = 'black'
+    if epic.status == Status.CLOSED:
+        fillcolor = 'lightgray'
+    dot.node(f"{epic.uid}",
+          "{} ({}/{})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.count_closed,
+                              epic.count_all_issues), style='filled',
+          color=fontcolor,
+          fontcolor=fontcolor,
+          URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
+          fillcolor=fillcolor, shape='folder')
+
+
 def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled'):
     color = 'black'
     shape = 'tab'
     fillcolor = "white"
 
     if issue.epic_id is None:
-        shape = 'parallelogram'
+        shape = 'component'
 
     if issue.status == Status.CLOSED and issue.has_no_links:
         return
