@@ -1,6 +1,7 @@
 import tomllib
 import graphviz
 import pickle
+from pathlib import Path
 
 from model.classes import Issue, RelatedList, BlockList, Status, Epic
 
@@ -19,6 +20,8 @@ def main():
     epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
     links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
     links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+
+    Path("../renders").mkdir(parents=True, exist_ok=True)
 
     print("Generate epic overview...")
     render_epics_clustered(epics)

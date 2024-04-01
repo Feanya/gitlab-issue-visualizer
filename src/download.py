@@ -1,8 +1,8 @@
-from typing import List
-
 import gitlab
 import pickle
 import tomllib
+from pathlib import Path
+
 
 from model.classes import *
 
@@ -23,6 +23,7 @@ def main():
     # dump
     print("***")
     print("Dump parsed stuff")
+    Path("../pickles").mkdir(parents=True, exist_ok=True)
     pickle.dump(issues, open("../pickles/issues_conv.p", "wb"))
     pickle.dump(links_related, open("../pickles/links_related.p", "wb"))
     pickle.dump(links_blocking, open("../pickles/links_blocking.p", "wb"))
