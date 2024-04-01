@@ -100,7 +100,6 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
             add_issue(issue, graph_issues, fillcolor, style, True)
 
         if not issue.epic_id and issue.has_no_links:
-            print(issue)
             graph_issues.edge(f"{issue.uid}",
                               f"Kein Link oder Epic",
                               style='invis', )
@@ -139,7 +138,6 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
     with graph_clusters.subgraph(name=f"cluster_no_epic") as no_epic:
         no_epic.attr(label='Ohne Epic')
         for project in config['projects']:
-            print(project)
             with no_epic.subgraph(name=f"cluster_no_epic{project['name']}") as d:
                 for uid, issue in issues.items():
                     d.attr(label=project['name'].capitalize())
@@ -259,8 +257,6 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
     if issue.epic_id is None:
         shape = 'component'
 
-    if issue.status == Status.CLOSED and issue.has_no_links:
-        return
     if issue.status == Status.CLOSED:
         color = 'gray'
         shape = 'tab'
