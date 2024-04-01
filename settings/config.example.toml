@@ -1,7 +1,17 @@
+# Configure the projects to analyze inside of the Gitlab group.
+# The name is only used for rendering and does not need to be the same as the project name in Gitlab.
 projects = [ { name = "backend", project_no = 1 },
            { name = "graphql", project_no = 2 },
            { name = "frontend", project_no = 3 } ]
 
+# Configure epic clusters for the epic-rendering.
+# The pattern is used to determine the clusters by searching in the labels of the epics.
+# Don't start counting at 0 or your cluster will disappear.
+clusters = [
+    {id=1, name="Release 04'24", color = "lightgoldenrodyellow", pattern="release::04'24"},
+    {id=2, name="Future", color = "grey99", pattern="future"}]
+
+# Base information on the server and group to use
 [server]
 url = ''
 private_token = ''
