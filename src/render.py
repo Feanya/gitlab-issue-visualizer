@@ -238,6 +238,75 @@ def render_epics_clustered(epics: dict[int, Epic]):
     graph_epics.render('../renders/epics', format='svg', view=False)
 
 
+def render_epic_relationships(epics: dict[int, Epic]):
+    """This rendering only makes sense if you use Gitlab Premium (but not Ultimate), because Premium does not support
+    relationships between epics.
+    It shows the relationship between epics based on some notation in the description.
+
+    The syntax supports the following elements:
+     - next: url
+     - previous: url
+     - includes: url
+     - related: url
+     """
+    graph_epics = graphviz.Digraph(engine='neato',
+                                   graph_attr=dict(
+                                       sep='+15',
+                                       # scale='5',
+                                       #pack='true',
+                                       fontsize='10pt',
+                                       # ratio='5',
+                                       defaultdist='15',
+                                       overlap='prism', overlap_scaling='3', ratio='0.9'
+                                   ),
+                                   node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
+                                   edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
+
+    clustered_epics, _ = cluster_epics(epics)
+
+    # render all epics
+    for epic in epics.values():
+        add_epic(epic, graph_epics)
+
+        # analyze the description to find links
+        if epic.description:
+            lines = epic.description.splitlines()
+            for line in lines:
+                if 'previous' in line \
+                        or 'next' in line \
+                        or 'include' in line \
+                        or 'related' in line:
+                    target_epic_id = None
+                    for t in line.split():
+                        if 'https:' in t:
+                            target_epic_id = t.split('/')[-1].rstrip('+')
+                    if target_epic_id:
+                        # next and previous connections as directed edges
+                        arrowhead = 'vee'
+                        if 'previous' in line:
+                            continue
+                        elif 'next' in line:
+                            direction = 'backward'
+                        # includes as directed edges
+                        elif 'include' in line:
+                            direction = 'backward'
+                            arrowhead = 'dot'
+                        # related as undirected edges
+                        else:
+                            direction = 'none'
+                        graph_epics.edge(str(epic.uid), target_epic_id, arrowhead=arrowhead, color='gray', dir=direction)
+
+    #for cluster in config['clusters']:
+    #    print(cluster)
+    #    graph_epics.node(f"{cluster['id']}", label=cluster['name'], shape='box')
+
+    # edges to cluster-nodes
+    #for cluster_id, epics in clustered_epics.items():
+    #    for epic in epics:
+    #        graph_epics.edge(f'{cluster_id}', f'{epic.uid}', style='invis', weight='100')
+    graph_epics.render('../renders/epic_relationships', format='svg', view=False)
+
+
 def add_epic(epic: Epic, dot: graphviz.Graph):
     fillcolor = 'lightcyan'
     fontcolor = 'black'

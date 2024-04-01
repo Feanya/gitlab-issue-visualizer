@@ -53,20 +53,23 @@ class Cluster:
     def __str__(self):
         return f"Cluster: {self.name} ({len(self.epics)}) Epics)"
 
+
 class Epic:
     uid: int
     title: str
     status: Status
     labels: [str]
+    description: str
     count_closed: int
     count_all_issues: int
     issue_uids: Optional[List[int]]
 
-    def __init__(self, status, uid, title, labels, count_closed, count_all_issues, issue_uids=None):
+    def __init__(self, status, uid, title, labels, description, count_closed, count_all_issues, issue_uids=None):
         self.uid = uid
         self.title = title
         self.status = status
         self.labels = labels
+        self.description = description
         self.count_closed = count_closed
         self.count_all_issues = count_all_issues
         self.issue_uids = issue_uids

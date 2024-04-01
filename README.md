@@ -27,6 +27,18 @@ The epic rendering includes how many issues are closed out of all issues and gro
 - Look at the progress of epics that are sorted by team, or feature, ...
 
 
+### epics_relationships
+Only useful for Gitlab Premium:
+Show the epics and their relationships. 
+Since epic-relationships are only include in Gitlab Ultimate, this graph is description-based.
+
+#### Usecases
+- Visualize relationships between epics
+- Identify epics blocking other epics
+- Identify epics that are not yet linked to other epics
+- Get an overview over size of epics that depend on each other
+
+
 ### clustered_issues_by_epic
 Based on the configured epic-clusters, but the issues are also rendered into the clusters. 
 Issues without an epic (and therefore without a cluster) are shown divided by project.

@@ -135,7 +135,7 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
         else:
             issue_uids = None
 
-        epics_parsed.append(Epic(s, epic.iid, epic.title, epic.labels, n, m, issue_uids))
+        epics_parsed.append(Epic(s, epic.iid, epic.title, epic.labels, epic.description, n, m, issue_uids))
     return {item.uid: item for item in epics_parsed}
 
 
