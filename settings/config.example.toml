@@ -1,0 +1,8 @@
+projects = [ { name = "backend", project_no = 1 },
+           { name = "graphql", project_no = 2 },
+           { name = "frontend", project_no = 3 } ]
+
+[server]
+url = ''
+private_token = ''
+group_no = 0

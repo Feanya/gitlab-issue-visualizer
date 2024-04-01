@@ -1,0 +1,2 @@
+python-gitlab~=3.14.0
+graphviz~=0.20.3

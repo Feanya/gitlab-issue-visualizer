@@ -1,0 +1,5 @@
+pickles*
+renders*
+.idea
+settings/config.toml
+*__pycache*
