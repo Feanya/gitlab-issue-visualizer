@@ -3,6 +3,7 @@ import graphviz
 import pickle
 from pathlib import Path
 
+import mock.data
 from model.classes import Issue, RelatedList, BlockList, Status, Epic
 
 weight_epics = '30'
@@ -10,29 +11,43 @@ weight_relations = '10'
 weight_cluster = '1'
 opened_only = False
 
-with open("../settings/config.toml", mode="rb") as filehandle:
-    config = tomllib.load(filehandle)
+test = False
+
+
+if not test:
+    with open("../settings/config.toml", mode="rb") as filehandle:
+        config = tomllib.load(filehandle)
+else:
+    with open("../settings/config.example.toml", mode="rb") as filehandle:
+        config = tomllib.load(filehandle)
 
 
 def main():
-    print("Read the pickles...")
-    issues: [Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
-    epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
-    links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
-    links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+    if not test:
+        print("Read the pickles...")
+        issues: [Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
+        epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
+        links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
+        links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+    else:
+        issues = mock.data.get_issues()
+        epics = mock.data.get_epics()
 
     Path("../renders").mkdir(parents=True, exist_ok=True)
 
     print("Generate epic overview...")
     render_epics_clustered(epics)
 
-    print("Generate issue overview, clustered by epics...")
-    render_issues_clustered_by_epic(issues, epics)
-    render_issues_clustered_by_epic(issues, epics, True)
+    print("Generate epic relationship overview...")
+    render_epic_relationships(epics)
 
-    print("Generate issue overview...")
+    # print("Generate issue overview, clustered by epics...")
+    #render_issues_clustered_by_epic(issues, epics)
+    #render_issues_clustered_by_epic(issues, epics, True)
+
+    # print("Generate issue overview...")
     render_issues_with_links(issues, epics, links_related, links_blocking)
-    render_issues_with_links(issues, epics, links_related, links_blocking, True)
+    # render_issues_with_links(issues, epics, links_related, links_blocking, True)
 
     print("Done!")
 
@@ -139,7 +154,7 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
 
     # first all issues without epics
     with graph_clusters.subgraph(name=f"cluster_no_epic") as no_epic:
-        no_epic.attr(label='Ohne Epic')
+        no_epic.attr(label='No epic')
         for project in config['projects']:
             with no_epic.subgraph(name=f"cluster_no_epic{project['name']}") as d:
                 for uid, issue in issues.items():
@@ -167,11 +182,12 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
                             issue = issues[issue_uid]
                             add_issue(issue, c, 'white')
 
+
     # and the epics without a cluster
     with graph_clusters.subgraph(name=f"cluster_no_cluster") as no_cluster:
-        no_cluster.attr(label='Ohne Cluster')
+        no_cluster.attr(label='No Cluster')
         with no_cluster.subgraph(name=f"cluster_no_cluster_closed") as d:
-            no_cluster.attr(label='')
+            d.attr(label='Closed epics')
             for epic in epics_without_clusters:
                 if epic.status == Status.OPENED:
                     add_epic(epic, no_cluster)
@@ -221,7 +237,7 @@ def render_epics_clustered(epics: dict[int, Epic]):
             for epic in epics:
                 add_epic(epic, cluster_subgraph)
     with graph_epics.subgraph(name=f"cluster_no_cluster") as c:
-        c.attr(label="Kein Cluster",
+        c.attr(label="No cluster",
                style='filled',
                color='white')
 
@@ -353,8 +369,7 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
                  fillcolor=fillcolor, )
     else:
         dot.node(f"{issue.uid}",
-                 "{}/{}".format(issue.project_id,
-                                issue.iid),
+                 "{}/{}".format(issue.project_id, issue.iid),
                  style=style,
                  color=color,
                  fontcolor=color,
