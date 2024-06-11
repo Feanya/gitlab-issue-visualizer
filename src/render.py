@@ -42,7 +42,7 @@ def main():
     render_epic_relationships(epics)
 
     # print("Generate issue overview, clustered by epics...")
-    #render_issues_clustered_by_epic(issues, epics)
+    render_issues_clustered_by_epic(issues, epics)
     #render_issues_clustered_by_epic(issues, epics, True)
 
     # print("Generate issue overview...")
@@ -179,9 +179,11 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
                 if epic.issue_uids:
                     if not (exclude_closed_epics and epic.status == Status.CLOSED):
                         for issue_uid in epic.issue_uids:
-                            issue = issues[issue_uid]
-                            add_issue(issue, c, 'white')
-
+                            try:
+                                issue = issues[issue_uid]
+                                add_issue(issue, c, 'white')
+                            except KeyError:
+                                print("KeyError!\n" + str(issue) + str(epic))
 
     # and the epics without a cluster
     with graph_clusters.subgraph(name=f"cluster_no_cluster") as no_cluster:
