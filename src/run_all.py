@@ -1,5 +1,8 @@
-print("Start download and parsing")
 from src import download
-print("Start plotting")
 from src import render
+
+print("Start download and parsing")
+download.main()
+print("Start plotting")
+render.main()
 print("Finished")
