@@ -5,6 +5,7 @@ from pathlib import Path
 
 import mock.data
 from model.classes import Issue, RelatedList, BlockList, Status, Epic
+from src.graph import EpicGraph
 
 weight_epics = '30'
 weight_relations = '10'
@@ -12,7 +13,6 @@ weight_cluster = '1'
 opened_only = False
 
 test = False
-
 
 if not test:
     with open("../settings/config.toml", mode="rb") as filehandle:
@@ -25,8 +25,8 @@ else:
 def main():
     if not test:
         print("Read the pickles...")
-        issues: [Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
-        epics: [Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
+        issues: dict[int, Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
+        epics: dict[int, Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
         links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
         links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
     else:
@@ -35,18 +35,18 @@ def main():
 
     Path("../renders").mkdir(parents=True, exist_ok=True)
 
-    print("Generate epic overview...")
-    render_epics_clustered(epics)
+    # print("Generate epic overview...")
+    # render_epics_clustered(epics)
 
     print("Generate epic relationship overview...")
     render_epic_relationships(epics)
 
     # print("Generate issue overview, clustered by epics...")
-    render_issues_clustered_by_epic(issues, epics)
-    #render_issues_clustered_by_epic(issues, epics, True)
+    # render_issues_clustered_by_epic(issues, epics)
+    # render_issues_clustered_by_epic(issues, epics, True)
 
     # print("Generate issue overview...")
-    render_issues_with_links(issues, epics, links_related, links_blocking)
+    # render_issues_with_links(issues, epics, links_related, links_blocking)
     # render_issues_with_links(issues, epics, links_related, links_blocking, True)
 
     print("Done!")
@@ -256,7 +256,7 @@ def render_epics_clustered(epics: dict[int, Epic]):
     graph_epics.render('../renders/epics', format='svg', view=False)
 
 
-def render_epic_relationships(epics: dict[int, Epic]):
+def render_epic_relationships(epics: dict[int, Epic], horizontal=True):
     """This rendering only makes sense if you use Gitlab Premium (but not Ultimate), because Premium does not support
     relationships between epics.
     It shows the relationship between epics based on some notation in the description.
@@ -266,77 +266,107 @@ def render_epic_relationships(epics: dict[int, Epic]):
      - previous: url
      - includes: url
      - related: url
+
+     Arguments:
+         horizontal - Determines whether the "trees" in the graph will grow from left to right or bottom to top.
      """
-    graph_epics = graphviz.Digraph(engine='neato',
-                                   graph_attr=dict(
-                                       sep='+15',
-                                       # scale='5',
-                                       #pack='true',
-                                       fontsize='10pt',
-                                       # ratio='5',
-                                       defaultdist='15',
-                                       overlap='prism', overlap_scaling='3', ratio='0.9'
-                                   ),
-                                   node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
-                                   edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
+    dot_graph = graphviz.Digraph(engine='fdp',
+                                 graph_attr=dict(
+                                     sep='+15',
+                                     # scale='5',
+                                     # pack='true',
+                                     fontsize='10pt',
+                                     # ratio='5',
+                                     defaultdist='15',
+                                     overlap='false', overlap_scaling='1',
+                                 ),
+                                 node_attr=dict(shape='circle', fontsize='10pt', margin='0.02,0.02', height='0.3'),
+                                 edge_attr=dict(weight=weight_relations, len='0.2', dir='none'))
 
-    clustered_epics, _ = cluster_epics(epics)
+    # Analyze epics and their relationships
+    epic_graph = EpicGraph(epics)
+    orphans: list[int] = epic_graph.get_orphans()
+    non_orphans: list[int] = [i for i in range(len(epic_graph)) if i not in orphans]
 
-    # render all epics
-    for epic in epics.values():
-        add_epic(epic, graph_epics)
+    # Cluster orphaned epics separately
+    with dot_graph.subgraph(name='cluster_0') as c:
+        c.attr(style='filled', color='lightgrey')
+        c.node_attr.update(style='filled', color='white')
+        c.attr(label='Orphaned Epics')
 
-        # analyze the description to find links
-        if epic.description:
-            lines = epic.description.splitlines()
-            for line in lines:
-                if 'previous' in line \
-                        or 'next' in line \
-                        or 'include' in line \
-                        or 'related' in line:
-                    target_epic_id = None
-                    for t in line.split():
-                        if 'https:' in t:
-                            target_epic_id = t.split('/')[-1].rstrip('+')
-                    if target_epic_id:
-                        # next and previous connections as directed edges
-                        arrowhead = 'vee'
-                        if 'previous' in line:
-                            continue
-                        elif 'next' in line:
-                            direction = 'backward'
-                        # includes as directed edges
-                        elif 'include' in line:
-                            direction = 'backward'
-                            arrowhead = 'dot'
-                        # related as undirected edges
-                        else:
-                            direction = 'none'
-                        graph_epics.edge(str(epic.uid), target_epic_id, arrowhead=arrowhead, color='gray', dir=direction)
+        for orphan in orphans:
+            add_epic(epic_graph.epics[orphan], c, graph_id=orphan + 1)
 
-    #for cluster in config['clusters']:
-    #    print(cluster)
-    #    graph_epics.node(f"{cluster['id']}", label=cluster['name'], shape='box')
+    # Cluster all other epics
+    with dot_graph.subgraph(name='cluster_1') as c:
+        c.attr(style='filled', color='white')
+        c.node_attr.update(style='filled', color='white')
+        c.attr(label='Epics')
 
-    # edges to cluster-nodes
-    #for cluster_id, epics in clustered_epics.items():
-    #    for epic in epics:
-    #        graph_epics.edge(f'{cluster_id}', f'{epic.uid}', style='invis', weight='100')
-    graph_epics.render('../renders/epic_relationships', format='svg', view=False)
+        positions: dict[tuple[int, int]] = {}
+        height = 0
+        cumulative_root_width = 0
+        while len(positions.keys()) != len(non_orphans):
+            # This while loop builds up the graph's nodes in layers starting from the roots.
+            for i in non_orphans:
+                if epic_graph.node_heights[i] == height and height == 0:
+                    position = (cumulative_root_width, height * 2) if not horizontal \
+                        else (height * 2, cumulative_root_width)
+                    positions[i] = position
+                    add_epic(epic_graph.epics[i], c, positions[i], i + 1)
+                    # To prevent roots from being placed to close to each other the width of their tree is added.
+                    cumulative_root_width += epic_graph.tree_widths[i]
+                elif epic_graph.node_heights[i] == height:
+                    if not horizontal:
+                        position = (positions[epic_graph.node_parents[i]][0], height * 2)
+                        while position in positions.values():
+                            # If a position is taken by another node, the node will be placed next to it
+                            position = (position[0] + 1, position[1])
+                    else:
+                        position = (height * 2, positions[epic_graph.node_parents[i]][1])
+                        while position in positions.values():
+                            # If a position is taken by another node, the node will be placed next to it
+                            position = (position[0], position[1] + 1)
+                    positions[i] = position
+                    add_epic(epic_graph.epics[i], c, position, i + 1)
+            height += 1
+
+        # Adding the edges between nodes
+        added_related_edges = []
+        for i in range(len(epic_graph)):
+            for j in epic_graph.next[i]:
+                arrowhead = 'vee'
+                direction = 'backward'
+                dot_graph.edge(str(i + 1), str(j + 1), arrowhead=arrowhead, color='gray', dir=direction)
+            for j in epic_graph.includes[i]:
+                arrowhead = 'dot'
+                direction = 'backward'
+                dot_graph.edge(str(i + 1), str(j + 1), arrowhead=arrowhead, color='gray', dir=direction)
+            for j in epic_graph.related[i]:
+                if (i, j) not in added_related_edges:
+                    arrowhead = 'vee'
+                    direction = 'none'
+                    dot_graph.edge(str(i + 1), str(j + 1), arrowhead=arrowhead, color='gray', dir=direction)
+                    added_related_edges.append((i, j))
+                    added_related_edges.append((j, i))
+
+    dot_graph.render('../renders/epic_relationships', format='svg', view=False)
 
 
-def add_epic(epic: Epic, dot: graphviz.Graph):
+def add_epic(epic: Epic, dot: graphviz.Graph, pos: tuple[int, int] = None, graph_id=None):
     fillcolor = 'lightcyan'
     fontcolor = 'black'
     if epic.status == Status.CLOSED:
         fillcolor = 'lightgray'
-    dot.node(f"{epic.uid}",
+    pos = f"{pos[0]},{pos[1]}!" if pos else ""
+
+    dot.node(f"{graph_id if graph_id else epic.uid}",
              "{} ({}/{})".format(graphviz.escape(wrap_text(epic.title, 30)), epic.count_closed,
                                  epic.count_all_issues), style='filled',
              color=fontcolor,
              fontcolor=fontcolor,
              URL=f"https://git.hs-rw.de/groups/campusapp/-/epics/{epic.uid}",
-             fillcolor=fillcolor, shape='folder')
+             fillcolor=fillcolor, shape='folder', pos=pos)
 
 
 def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled', slim_style=False):

@@ -1,5 +1,5 @@
-from src import download
-from src import render
+import download
+import render
 
 print("Start download and parsing")
 download.main()
