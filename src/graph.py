@@ -118,6 +118,7 @@ class EpicGraph:
         for root in roots:
             trees.append(self.get_tree(root))
         related_roots = self.get_related_tree_roots(trees)
+        related_roots.sort()
         for i in range(len(related_roots)):
             roots = related_roots[i]
             a = roots[0]
@@ -174,24 +175,26 @@ class EpicGraph:
             self.tree_widths[node_id] = 1
             return 1
 
+        # uncomment when script crashes because of maximum recursion depth is exceeded
+        # print("epic id:", self.epics[node_id].uid)
+
         self.tree_widths[node_id] = sum([self.get_width(node) for node in next_nodes])
         return self.tree_widths[node_id]
 
     def swap_graph_ids(self, a: int, b: int):
         """Swaps the nodes with the ids a and b"""
 
-        temp = self.epics[a]
-        self.epics[a] = self.epics[b]
-        self.epics[b] = temp
+        self.epics[b], self.epics[a] = self.epics[a], self.epics[b]
+        self.node_heights[b], self.node_heights[a] = self.node_heights[a], self.node_heights[b]
+        self.tree_widths[b], self.tree_widths[a] = self.tree_widths[a], self.tree_widths[b]
 
         list_dicts: list[dict[int, list[int]]] = [self.next, self.previous, self.related,
                                                   self.includes, self.includedBy]
-        int_dicts: list[dict[int, int]] = [self.node_heights, self.node_parents, self.tree_widths]
+        int_dicts: list[dict[int, int]] = [self.node_parents]
+
         for dictionary in list_dicts:
             # swap lists
-            temp = dictionary[a]
-            dictionary[a] = dictionary[b]
-            dictionary[b] = temp
+            dictionary[b], dictionary[a] = dictionary[a], dictionary[b]
             # update all references
             for k, v in dictionary.items():
                 if a in v and b in v:
@@ -202,11 +205,11 @@ class EpicGraph:
                 elif b in v:
                     v.remove(b)
                     v.append(a)
+
         for dictionary in int_dicts:
             # swap lists
-            temp = dictionary[a]
-            dictionary[a] = dictionary[b]
-            dictionary[b] = temp
+            dictionary[b], dictionary[a] = dictionary[a], dictionary[b]
+
             # update all references
             for k, v in dictionary.items():
                 if v == a:
@@ -296,7 +299,7 @@ class EpicGraph:
 
         delete_later.sort(reverse=True)
         for i in delete_later:
-                del related_tree_roots[i]
+            del related_tree_roots[i]
 
         related_roots_list = [list(roots) for roots in related_tree_roots]
         for root_list in related_roots_list:
