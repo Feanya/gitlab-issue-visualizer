@@ -293,8 +293,10 @@ class EpicGraph:
                     if related_tree_roots[i].intersection(related_tree_roots[j]):
                         related_tree_roots[i] = related_tree_roots[i].union(related_tree_roots[j])
                         delete_later.append(j)
-        for i in delete_later[::-1]:
-            del related_tree_roots[i]
+
+        delete_later.sort(reverse=True)
+        for i in delete_later:
+                del related_tree_roots[i]
 
         related_roots_list = [list(roots) for roots in related_tree_roots]
         for root_list in related_roots_list:
