@@ -284,10 +284,15 @@ class EpicGraph:
         for i in range(0, len(related_tree_roots) - 1):
             if i in delete_later:
                 continue
-            for j in range(i + 1, len(related_tree_roots)):
-                if related_tree_roots[i].intersection(related_tree_roots[j]):
-                    related_tree_roots[i] = related_tree_roots[i].union(related_tree_roots[j])
-                    delete_later.append(j)
+            delete_later_len = -1
+            while (len(delete_later) != delete_later_len):  # Continue until all related trees were found
+                delete_later_len = len(delete_later)
+                for j in range(i + 1, len(related_tree_roots)):
+                    if j in delete_later:
+                        continue
+                    if related_tree_roots[i].intersection(related_tree_roots[j]):
+                        related_tree_roots[i] = related_tree_roots[i].union(related_tree_roots[j])
+                        delete_later.append(j)
         for i in delete_later[::-1]:
             del related_tree_roots[i]
 
