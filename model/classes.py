@@ -36,7 +36,12 @@ class Link:
         )
 
     def __eq__(self, other):
-        return self.source == other.target
+        if (self.source == other.source and self.target == other.target and self.type == other.type):
+            return True
+        return (
+            self.source == other.target
+            and {self.type, other.type} == {Link_Type.RELATES_TO}
+        )
 
 
 @dataclass

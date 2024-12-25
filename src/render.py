@@ -42,6 +42,9 @@ def main():
 
     Path("../renders").mkdir(parents=True, exist_ok=True)
 
+    print("Deduplicating undirected relationships...")
+    links_related = deduplicate_links(links_related)
+
     # print("Generate epic overview...")
     # render_epics_clustered(epics)
 
@@ -57,6 +60,16 @@ def main():
     render_issues_with_links(issues, epics, links_related, links_blocking, links_parent, exclude_closed_issues=True)
 
     print("Done!")
+
+
+def deduplicate_links(links: Sequence[Link]) -> list[Link]:
+    # Take all parent/child relationships
+    filtered = []
+    for l in links:
+        if any(f == l for f in filtered):
+            continue
+        filtered.append(l)
+    return filtered
 
 
 def cluster_epics(epics: dict[int, Epic]) -> tuple[dict[int, list[Epic]], list[Epic]]:
