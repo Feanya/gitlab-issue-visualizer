@@ -5,6 +5,7 @@ from typing import Mapping, Sequence
 
 import gitlab.v4
 import gitlab.v4.objects
+from rich.progress import track
 sys.path.append("..")
 
 import gitlab
@@ -18,6 +19,7 @@ from src.utils import time_string
 
 _log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 projects_raw = []
 
@@ -105,7 +107,8 @@ def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[in
 
 def download_project_issues(gl: gitlab.Gitlab, gq: gitlab.GraphQL, project_id: int) -> dict[int, Issue]:
     issues = {}
-    for riss in gl.projects.get(project_id).issues.list(all=True):
+    gl_issues = gl.projects.get(project_id).issues.list(all=True)
+    for riss in track(gl_issues, description=f"Project {project_id}..."):
         issues[riss.id] = to_issue(riss, gq)
 
     print(f"** Issues in project {project_id}: ({len(issues)}) **")
