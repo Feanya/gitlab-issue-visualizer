@@ -1,3 +1,7 @@
+import logging
+
+import gitlab.v4
+import gitlab.v4.objects
 import gitlab
 import pickle
 import tomllib
@@ -6,6 +10,9 @@ import time
 
 from model.classes import *
 from src.utils import time_string
+
+_log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 projects_raw = []
 
@@ -147,14 +154,20 @@ def parse_links(issues_raw, issues) -> ([Link], [Link]):
     links_related = []
 
     for issue in issues_raw:
+        src = issues.get(issue.id)
         links = issue.links.list()
         for link in links:
+            dst = issues.get(link.id)
+            if dst is None:
+                _log.warning("Can't find target %s of link in %i/%i (%s).", link.id, issue.project_id, issue.id, issue.title)
+                continue
+
             if link.link_type == 'is_blocked_by':
                 print("skip\n" if verbose else "s", end='')
                 break
             elif link.link_type == 'blocks':
                 # here we have a blocker
-                link_conv = Link(issues.get(issue.id), issues.get(link.id), Link_Type.BLOCKS)
+                link_conv = Link(src, dst, Link_Type.BLOCKS)
                 links_blocking.append(link_conv)
                 print(f"Added: {link_conv}\n" if verbose else ".", end="")
 
@@ -163,13 +176,12 @@ def parse_links(issues_raw, issues) -> ([Link], [Link]):
                 dub = False
                 for l in links_related:
                     if l.target is None:
-                        print(l)
-                        break
+                        dub = True
                     if l.target.uid == issue.id:
                         dub = True
 
                 if not dub:
-                    link_conv = Link(issues.get(issue.id), issues.get(link.id), Link_Type.RELATES_TO)
+                    link_conv = Link(src, dst, Link_Type.RELATES_TO)
                     links_related.append(link_conv)
 
                 print(f"Added: {link_conv}\n" if verbose else ".", end="")

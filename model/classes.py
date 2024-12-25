@@ -88,14 +88,14 @@ class Link:
     target: Issue
     type: Link_Type
 
-    def __init__(self, source, target, type):
+    def __init__(self, source: Issue, target: Issue, type: Link_Type):
+        if target is None:
+            raise ValueError(f"Link in {source.project_id}/{source.iid} has no target.")
         self.source = source
         self.target = target
         self.type = type
-    def __str__(self):
 
-        if self.target is None:
-            print(self.source)
+    def __str__(self):
         return "({u1}) {p1}/{id1} {t} ({u2}) {p2}/{id2}".format(
             p1=self.source.project_id,
             id1=self.source.iid,
