@@ -16,7 +16,7 @@ from model.classes import *
 from src.utils import time_string
 
 _log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 projects_raw = []
 
@@ -25,7 +25,7 @@ with open("../settings/config.toml", mode="rb") as filehandle:
 
 
 def main():
-    (epics_raw, issues) = download()
+    (epics_raw, issues) = download(pickle_folder=Path(__file__).parent.parent / "pickles")
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
     links_related, links_blocking, links_parent = aggregate_links(issues)
@@ -42,7 +42,7 @@ def main():
     print("***")
 
 
-def download() -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
+def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
     # private token or personal token authentication (GitLab.com)
 
     url = config['server']['url']
@@ -77,7 +77,18 @@ def download() -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
 
     issues: dict[int, Issue] = {}
     for p in projects_take:
-        issues.update(download_project_issues(gl, gq, p['project_no']))
+        pid = p['project_no']
+        fp_savefile = pickle_folder / f"issues_{pid}.p"
+        if fp_savefile.exists():
+            with open(fp_savefile, "rb") as pfile:
+                pissues = pickle.load(pfile)
+            _log.info("Loaded %i issues from %s.", len(pissues), fp_savefile)
+        else:
+            pissues = download_project_issues(gl, gq, p['project_no'])
+            with open(fp_savefile, "wb") as pfile:
+                pickle.dump(pissues, pfile)
+            _log.info("Cached %i issues in %s.", len(pissues), fp_savefile)
+        issues.update(pissues)
 
     return epics_raw, issues
 
