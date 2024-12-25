@@ -25,12 +25,10 @@ with open("../settings/config.toml", mode="rb") as filehandle:
 
 
 def main():
-    (epics_raw, issues_raw, work_items) = download()
+    (epics_raw, issues) = download()
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
-    issues: dict[int, Issue] = parse_issues(issues_raw)
-    #print(issues)
-    links_related, links_blocking, links_parent = parse_links(issues_raw, issues, work_items)
+    links_related, links_blocking, links_parent = parse_links(issues)
 
     # dump
     print("***")
@@ -44,7 +42,7 @@ def main():
     print("***")
 
 
-def download():
+def download() -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
     # private token or personal token authentication (GitLab.com)
 
     url = config['server']['url']
@@ -77,57 +75,57 @@ def download():
         projects_take = projects_conf
     print(f"** Requesting Issues in {len(projects_take)} projects...**")
 
-    issues_raw = []
-    work_items: dict[int, WorkItem] = {}
+    issues: dict[int, Issue] = {}
     for p in projects_take:
-        name = p['name']
-        number = p['project_no']
+        issues.update(download_project_issues(gl, gq, p['project_no']))
 
-        issues_project = gl.projects.get(number).issues.list(get_all=True, scope='all')
-        issues_raw += issues_project
-        for iss in issues_project:
-            work_items[iss.id] = query_workitem(iss.id, gq)
-
-        print(f"** Issues {name}: ({len(issues_project)}) **")
-
-    return epics_raw, issues_raw, work_items
+    return epics_raw, issues
 
 
-def query_workitem(iid: int, client: gitlab.GraphQL) -> WorkItem:
+def download_project_issues(gl: gitlab.Gitlab, gq: gitlab.GraphQL, project_id: int) -> dict[int, Issue]:
+    issues = {}
+    for riss in gl.projects.get(project_id).issues.list(all=True):
+        issues[riss.id] = to_issue(riss, gq)
+
+    print(f"** Issues in project {project_id}: ({len(issues)}) **")
+    return issues
+
+
+def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Issue:
     q = """
     query workItem {
     workItem(id: "gid://gitlab/WorkItem/%i") {
-        id
-        iid
-        title
-        state
-        webUrl
+        #id
+        #iid
+        #title
+        #state
+        #webUrl
         widgets {
-        ... on WorkItemWidgetLabels {
-            labels {
-            nodes {
-                id
-                title
-                description
-                color
-                textColor
-                __typename
-            }
-            __typename
-            }
-            __typename
-        }
-        ... on WorkItemWidgetTimeTracking {
-            timeEstimate
-            totalTimeSpent
-            __typename
-        }
+        #... on WorkItemWidgetLabels {
+        #    labels {
+        #    nodes {
+        #        id
+        #        title
+        #        description
+        #        color
+        #        textColor
+        #        __typename
+        #    }
+        #    __typename
+        #    }
+        #    __typename
+        #}
+        #... on WorkItemWidgetTimeTracking {
+        #    timeEstimate
+        #    totalTimeSpent
+        #    __typename
+        #}
         ... on WorkItemWidgetHierarchy {
             hasParent
             parent {
-            id
-            iid
-            title
+                id
+                #iid
+                #title
             }
             __typename
         }
@@ -137,57 +135,32 @@ def query_workitem(iid: int, client: gitlab.GraphQL) -> WorkItem:
     }
     __typename
     }
-    """ % (iid,)
+    """ % (iss.id,)
     res = client.execute(q)
+    # Extract parent issues from the corresponding entry in the widget list
     parent = None
     for widget in res["workItem"]["widgets"]:
         if widget["__typename"] != "WorkItemWidgetHierarchy":
             continue
         if widget["hasParent"]:
             parent = int(widget["parent"]["id"].split("/")[-1])
-    wi = WorkItem(
-        iid=iid,
-        title=res["workItem"]["title"],
+
+    wi = Issue(
+        uid=iss.id,
+        iid=iss.iid,
+        project_id=iss.project_id,
+        title=iss.title,
         status={
-            "CLOSED": Status.CLOSED,
-            "OPEN": Status.OPENED,
-        }[res["workItem"]["state"]],
-        url=res["workItem"]["webUrl"],
+            "closed": Status.CLOSED,
+            "opened": Status.OPENED,
+        }[iss.state],
+        links=iss.links.list(),
+        url=iss.web_url,
+        has_iteration=bool(getattr(iss, "iteration", [])),
+        epic_id=getattr(iss, "epic_iid", None),
         parent=parent,
     )
     return wi
-
-
-def parse_issues(issues_from_gl) -> dict[int, Issue]:
-    issue_dict = {}
-    print(f"Parsing {len(issues_from_gl)} issues...")
-    i = 0
-    for issue in issues_from_gl:
-        if issue.state == 'opened':
-            s = Status.OPENED
-        else:
-            s = Status.CLOSED
-
-        issue_conv = Issue(s,
-                           issue.id,
-                           issue.iid,
-                           issue.project_id,
-                           getattr(issue, "epic_iid", None),
-                           issue.title,
-                           issue.web_url,
-                           bool(getattr(issue, "iteration", [])))
-
-        if not issue.links.list():
-            setattr(issue_conv, 'has_no_links', True)
-
-        issue_dict[issue.id] = issue_conv
-        i = i + 1
-        if i == 20:
-            print('.', end='')
-            i = 0
-    print('')
-
-    return issue_dict
 
 
 def parse_epics(epics_from_gl) -> dict[int, Epic]:
@@ -223,24 +196,18 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
     return {item.uid: item for item in epics_parsed}
 
 
-def parse_links(
-    issues_raw: Sequence[gitlab.v4.objects.ProjectIssue],
-    issues: Mapping[int, Issue],
-    work_items: Mapping[int, WorkItem],
-) -> tuple[list[Link], list[Link], list[Link]]:
+def parse_links(issues: Mapping[int, Issue]) -> tuple[list[Link], list[Link], list[Link]]:
     print("'************\n\n************\nLinking...")
     verbose = False
     links_blocking: list[Link] = []
     links_related: list[Link] = []
     links_parent: list[Link] = []
 
-    for issue in issues_raw:
-        src = issues.get(issue.id)
-        links = issue.links.list()
-        for link in links:
+    for src in issues.values():
+        for link in src.links:
             dst = issues.get(link.id)
             if dst is None:
-                _log.warning("Can't find target %s of link in %i/%i (%s).", link.id, issue.project_id, issue.id, issue.title)
+                _log.warning("Can't find target %s of link in %i/%i (%s).", link.id, src.project_id, src.iid, src.title)
                 continue
 
             if link.link_type == 'is_blocked_by':
@@ -258,7 +225,7 @@ def parse_links(
                 for l in links_related:
                     if l.target is None:
                         dub = True
-                    if l.target.uid == issue.id:
+                    if l.target.uid == src.uid:
                         dub = True
 
                 if not dub:
@@ -267,11 +234,10 @@ def parse_links(
 
                 print(f"Added: {link_conv}\n" if verbose else ".", end="")
 
-        # Get parent issue information from GraphQL
-        wi = work_items[int(issue.id)]
-        if wi.parent:
-            links_parent.append(Link(src, issues.get(wi.parent), Link_Type.IS_CHILD_OF))
+        if src.parent:
+            links_parent.append(Link(src, issues.get(src.parent), Link_Type.IS_CHILD_OF))
 
+    _log.info("Found %i relations, %i blocking and %i parent relationships.", len(links_related), len(links_blocking), len(links_parent))
     return links_related, links_blocking, links_parent
 
 

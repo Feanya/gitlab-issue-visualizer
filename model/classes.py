@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List
 
+import gitlab.base
+
 
 class Status(Enum):
     OPENED = 0
@@ -16,36 +18,17 @@ class Link_Type(Enum):
 
 
 @dataclass
-class WorkItem:
-    iid: int
-    title: str
-    status: Status
-    parent: Optional[int]
-    url: str
-
-
 class Issue:
     uid: int
     iid: int
     project_id: int
     title: str
     status: Status
-    epic_id: int
-    has_no_links: bool
+    links: list[gitlab.base.RESTObject]
     url: str
     has_iteration: bool
-    epic_no: int
-
-    def __init__(self, status, uid, iid, project_id, epic_id, title, url, has_iteration):
-        self.uid = uid
-        self.iid = iid
-        self.project_id = project_id
-        self.title = title
-        self.status = status
-        self.epic_id = epic_id
-        self.url = url
-        self.has_no_links = False
-        self.has_iteration = has_iteration
+    epic_id: Optional[int]
+    parent: Optional[int]
 
     def __str__(self):
         return "{} – {}/{}: {} ({})".format(self.uid, self.project_id, self.iid, self.title, (self.status.name).lower())
