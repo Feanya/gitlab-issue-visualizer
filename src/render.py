@@ -401,7 +401,7 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
     # Node für das Issue anlegen
     if not slim_style:
         dot.node(f"{issue.uid}",
-                 "{}/{}\n{}".format(issue.project_id,
+                 "{}/#{}\n{}".format(issue.project_id,
                                     issue.iid,
                                     graphviz.escape(wrap_text(issue.title, 30))),
                  style=style,
@@ -412,7 +412,7 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
                  fillcolor=fillcolor, )
     else:
         dot.node(f"{issue.uid}",
-                 "{}/{}".format(issue.project_id, issue.iid),
+                 "{}/#{}".format(issue.project_id, issue.iid),
                  style=style,
                  color=color,
                  fontcolor=color,
@@ -440,12 +440,16 @@ def find(clusters, epic_id: int) -> str:
             return name
 
 
-def wrap_text(text: str, min_length: int) -> str:
+def wrap_text(text: str, min_length: int, max_lines: int=2) -> str:
     pos = min_length
+    nlines = 1
     while pos < len(text):
         whitespace = text.find(' ', pos)
         if whitespace > 0:
+            if nlines == max_lines:
+                return text[:whitespace] + "..."
             text = text[:whitespace] + '\n' + text[whitespace + 1:]
+            nlines += 1
         else:
             break
         pos = whitespace + min_length
