@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List
 
@@ -11,7 +12,16 @@ class Link_Type(Enum):
     RELATES_TO = 0
     BLOCKS = 1
     IS_BLOCKED_BY = 2
+    IS_CHILD_OF = 3
 
+
+@dataclass
+class WorkItem:
+    iid: int
+    title: str
+    status: Status
+    parent: Optional[int]
+    url: str
 
 
 class Issue:

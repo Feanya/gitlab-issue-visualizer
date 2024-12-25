@@ -1,8 +1,11 @@
 import logging
+import sys
 from typing import Mapping, Sequence
 
 import gitlab.v4
 import gitlab.v4.objects
+sys.path.append("..")
+
 import gitlab
 import pickle
 import tomllib
@@ -22,12 +25,12 @@ with open("../settings/config.toml", mode="rb") as filehandle:
 
 
 def main():
-    (epics_raw, issues_raw) = download()
+    (epics_raw, issues_raw, work_items) = download()
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
     issues: dict[int, Issue] = parse_issues(issues_raw)
     #print(issues)
-    links_related, links_blocking = parse_links(issues_raw, issues)
+    links_related, links_blocking, links_parent = parse_links(issues_raw, issues, work_items)
 
     # dump
     print("***")
@@ -36,6 +39,7 @@ def main():
     pickle.dump(issues, open("../pickles/issues_conv.p", "wb"))
     pickle.dump(links_related, open("../pickles/links_related.p", "wb"))
     pickle.dump(links_blocking, open("../pickles/links_blocking.p", "wb"))
+    pickle.dump(links_parent, open("../pickles/links_parent.p", "wb"))
     pickle.dump(epics, open("../pickles/epics_conv.p", "wb"))
     print("***")
 
@@ -46,6 +50,7 @@ def download():
     url = config['server']['url']
 
     gl = gitlab.Gitlab(url, config['server']['private_token'])
+    gq = gitlab.GraphQL(url, token=config['server']['private_token'])
 
     print("Authenticate...")
     gl.auth()
@@ -69,16 +74,84 @@ def download():
     print(f"** Requesting Issues in {len(projects_conf)} projects...**")
 
     issues_raw = []
+    work_items: dict[int, WorkItem] = {}
     for p in projects_conf:
         name = p['name']
         number = p['project_no']
 
         issues_project = gl.projects.get(number).issues.list(get_all=True, scope='all')
-        issues_raw = issues_raw + issues_project
+        issues_raw += issues_project
+        for iss in issues_project:
+            work_items[iss.id] = query_workitem(iss.id, gq)
 
         print(f"** Issues {name}: ({len(issues_project)}) **")
 
-    return epics_raw, issues_raw
+    return epics_raw, issues_raw, work_items
+
+
+def query_workitem(iid: int, client: gitlab.GraphQL) -> WorkItem:
+    q = """
+    query workItem {
+    workItem(id: "gid://gitlab/WorkItem/%i") {
+        id
+        iid
+        title
+        state
+        webUrl
+        widgets {
+        ... on WorkItemWidgetLabels {
+            labels {
+            nodes {
+                id
+                title
+                description
+                color
+                textColor
+                __typename
+            }
+            __typename
+            }
+            __typename
+        }
+        ... on WorkItemWidgetTimeTracking {
+            timeEstimate
+            totalTimeSpent
+            __typename
+        }
+        ... on WorkItemWidgetHierarchy {
+            hasParent
+            parent {
+            id
+            iid
+            title
+            }
+            __typename
+        }
+        __typename
+        }
+        __typename
+    }
+    __typename
+    }
+    """ % (iid,)
+    res = client.execute(q)
+    parent = None
+    for widget in res["workItem"]["widgets"]:
+        if widget["__typename"] != "WorkItemWidgetHierarchy":
+            continue
+        if widget["hasParent"]:
+            parent = int(widget["parent"]["id"].split("/")[-1])
+    wi = WorkItem(
+        iid=iid,
+        title=res["workItem"]["title"],
+        status={
+            "CLOSED": Status.CLOSED,
+            "OPEN": Status.OPENED,
+        }[res["workItem"]["state"]],
+        url=res["workItem"]["webUrl"],
+        parent=parent,
+    )
+    return wi
 
 
 def parse_issues(issues_from_gl) -> dict[int, Issue]:
@@ -149,11 +222,13 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
 def parse_links(
     issues_raw: Sequence[gitlab.v4.objects.ProjectIssue],
     issues: Mapping[int, Issue],
-) -> tuple[list[Link], list[Link]]:
+    work_items: Mapping[int, WorkItem],
+) -> tuple[list[Link], list[Link], list[Link]]:
     print("'************\n\n************\nLinking...")
     verbose = False
     links_blocking: list[Link] = []
     links_related: list[Link] = []
+    links_parent: list[Link] = []
 
     for issue in issues_raw:
         src = issues.get(issue.id)
@@ -187,7 +262,13 @@ def parse_links(
                     links_related.append(link_conv)
 
                 print(f"Added: {link_conv}\n" if verbose else ".", end="")
-    return links_related, links_blocking
+
+        # Get parent issue information from GraphQL
+        wi = work_items[int(issue.id)]
+        if wi.parent:
+            links_parent.append(Link(src, issues.get(wi.parent), Link_Type.IS_CHILD_OF))
+
+    return links_related, links_blocking, links_parent
 
 
 if __name__ == "__main__":

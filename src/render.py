@@ -1,3 +1,7 @@
+import sys
+from typing import Sequence
+sys.path.append("..")
+
 import tomllib
 import graphviz
 import pickle
@@ -5,7 +9,7 @@ from pathlib import Path
 import time
 
 import mock.data
-from model.classes import Issue, RelatedList, BlockList, Status, Epic
+from model.classes import Issue, Link, RelatedList, BlockList, Status, Epic
 from src.utils import time_string
 from src.graph import EpicGraph
 
@@ -31,6 +35,7 @@ def main():
         epics: dict[int, Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
         links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
         links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+        links_parent: list[Link] = pickle.load(open("../pickles/links_parent.p", 'rb'))
     else:
         issues = mock.data.get_issues()
         epics = mock.data.get_epics()
@@ -40,16 +45,16 @@ def main():
     # print("Generate epic overview...")
     # render_epics_clustered(epics)
 
-    print("Generate epic relationship overview...")
-    render_epic_relationships(epics)
+    # print("Generate epic relationship overview...")
+    # render_epic_relationships(epics)
 
     # print("Generate issue overview, clustered by epics...")
     # render_issues_clustered_by_epic(issues, epics)
     # render_issues_clustered_by_epic(issues, epics, True)
 
-    # print("Generate issue overview...")
-    # render_issues_with_links(issues, epics, links_related, links_blocking)
-    # render_issues_with_links(issues, epics, links_related, links_blocking, True)
+    print("Generate issue overview...")
+    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent)
+    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent, exclude_closed_issues=True)
 
     print("Done!")
 
@@ -78,7 +83,7 @@ def cluster_epics(epics: dict[int, Epic]) -> tuple[dict[int, list[Epic]], list[E
 
 
 def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], list_related: RelatedList,
-                             list_blocks: BlockList, exclude_closed_issues=False):
+                             list_blocks: BlockList, list_parent: Sequence[Link], exclude_closed_issues=False):
     """Render issues.svg: all issues with their epics and dependencies between the issues"""
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
@@ -119,10 +124,10 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
         else:
             add_issue(issue, graph_issues, fillcolor, style, True)
 
-        if not issue.epic_id and issue.has_no_links:
-            graph_issues.edge(f"{issue.uid}",
-                              f"Kein Link oder Epic",
-                              style='invis', )
+        # if not issue.epic_id and issue.has_no_links:
+        #     graph_issues.edge(f"{issue.uid}",
+        #                       f"Kein Link oder Epic",
+        #                       style='invis', )
 
     for link in list_related:
         graph_issues.edge(f"{link.source.uid}",
@@ -131,6 +136,10 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
     for link in list_blocks:
         graph_issues.edge(f"{link.source.uid}",
                           f"{link.target.uid}", dir='backward')
+
+    for link in list_parent:
+        graph_issues.edge(f"{link.source.uid}",
+                          f"{link.target.uid}", dir='forward')
 
     if exclude_closed_issues:
         graph_issues.render('../renders/issues_slim', format='svg', view=False)
