@@ -71,11 +71,15 @@ def download():
 
 
     projects_conf = config['projects']
-    print(f"** Requesting Issues in {len(projects_conf)} projects...**")
+    if not projects_conf:
+        projects_take = projects
+    else:
+        projects_take = projects_conf
+    print(f"** Requesting Issues in {len(projects_take)} projects...**")
 
     issues_raw = []
     work_items: dict[int, WorkItem] = {}
-    for p in projects_conf:
+    for p in projects_take:
         name = p['name']
         number = p['project_no']
 
