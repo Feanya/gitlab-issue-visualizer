@@ -58,7 +58,7 @@ class Epic:
     uid: int
     title: str
     status: Status
-    labels: [str]
+    labels: list[str]
     description: str
     count_closed: int
     count_all_issues: int
@@ -112,5 +112,5 @@ class Link:
         return False
 
 
-RelatedList = [Link]
-BlockList = [Link]
+RelatedList = list[Link]
+BlockList = list[Link]

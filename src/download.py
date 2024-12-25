@@ -1,4 +1,5 @@
 import logging
+from typing import Mapping, Sequence
 
 import gitlab.v4
 import gitlab.v4.objects
@@ -114,7 +115,7 @@ def parse_issues(issues_from_gl) -> dict[int, Issue]:
 
 def parse_epics(epics_from_gl) -> dict[int, Epic]:
     print("Parsing epics...")
-    epics_parsed: [Epic] = []
+    epics_parsed: list[Epic] = []
     for epic in epics_from_gl:
         if epic.state == 'opened':
             s = Status.OPENED
@@ -145,11 +146,14 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
     return {item.uid: item for item in epics_parsed}
 
 
-def parse_links(issues_raw, issues) -> ([Link], [Link]):
+def parse_links(
+    issues_raw: Sequence[gitlab.v4.objects.ProjectIssue],
+    issues: Mapping[int, Issue],
+) -> tuple[list[Link], list[Link]]:
     print("'************\n\n************\nLinking...")
     verbose = False
-    links_blocking = []
-    links_related = []
+    links_blocking: list[Link] = []
+    links_related: list[Link] = []
 
     for issue in issues_raw:
         src = issues.get(issue.id)

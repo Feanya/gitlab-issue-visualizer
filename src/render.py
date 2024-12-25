@@ -54,10 +54,10 @@ def main():
     print("Done!")
 
 
-def cluster_epics(epics: dict[int, Epic]) -> (dict[int, [Epic]], [Epic]):
+def cluster_epics(epics: dict[int, Epic]) -> tuple[dict[int, list[Epic]], list[Epic]]:
     # construct empty clusters
-    clusters: dict[int, [Epic]] = {c['id']: [] for c in config['clusters']}
-    epics_without_cluster: [Epic] = []
+    clusters: dict[int, list[Epic]] = {c['id']: [] for c in config['clusters']}
+    epics_without_cluster: list[Epic] = []
 
     # sort epics in clusters
     for epic in epics.values():
