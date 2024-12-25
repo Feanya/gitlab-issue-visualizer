@@ -57,7 +57,10 @@ def download():
     projects = project_group.projects.list()
     print("** Projects in group: ({n}) **".format(n=len(projects)))
 
-    epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
+    try:
+        epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
+    except gitlab.exceptions.GitlabListError:
+        epics_raw = []
     print("** Epics in group: ({n}) **".format(n=len(epics_raw)))
 
 
@@ -87,19 +90,14 @@ def parse_issues(issues_from_gl) -> dict[int, Issue]:
         else:
             s = Status.CLOSED
 
-        if issue.iteration is None:
-            has_iteration = False
-        else:
-            has_iteration = True
-
         issue_conv = Issue(s,
                            issue.id,
                            issue.iid,
                            issue.project_id,
-                           issue.epic_iid,
+                           getattr(issue, "epic_iid", None),
                            issue.title,
                            issue.web_url,
-                           has_iteration)
+                           bool(getattr(issue, "iteration", [])))
 
         if not issue.links.list():
             setattr(issue_conv, 'has_no_links', True)
