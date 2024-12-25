@@ -13,8 +13,30 @@ class Status(Enum):
 class Link_Type(Enum):
     RELATES_TO = 0
     BLOCKS = 1
-    IS_BLOCKED_BY = 2
-    IS_CHILD_OF = 3
+    IS_CHILD_OF = 2
+
+
+class Link:
+    source: int
+    target: int
+    type: Link_Type
+
+    def __init__(self, source: int, target: int, type: Link_Type):
+        if target is None:
+            raise ValueError(f"Link in has no target.")
+        self.source = source
+        self.target = target
+        self.type = type
+
+    def __str__(self):
+        return "<Link {src}---{typ}--->{tgt}>".format(
+            src=self.source,
+            tgt=self.target,
+            typ=self.type
+        )
+
+    def __eq__(self, other):
+        return self.source == other.target
 
 
 @dataclass
@@ -24,7 +46,7 @@ class Issue:
     project_id: int
     title: str
     status: Status
-    links: list[gitlab.base.RESTObject]
+    links: list[Link]
     url: str
     has_iteration: bool
     epic_id: Optional[int]
@@ -72,37 +94,6 @@ class Epic:
 
     def __repr__(self):
         return "[Epic]: {}: {} ({})".format(self.uid, self.title, self.status.name.lower())
-
-
-
-
-class Link:
-    source: Issue
-    target: Issue
-    type: Link_Type
-
-    def __init__(self, source: Issue, target: Issue, type: Link_Type):
-        if target is None:
-            raise ValueError(f"Link in {source.project_id}/{source.iid} has no target.")
-        self.source = source
-        self.target = target
-        self.type = type
-
-    def __str__(self):
-        return "({u1}) {p1}/{id1} {t} ({u2}) {p2}/{id2}".format(
-            p1=self.source.project_id,
-            id1=self.source.iid,
-            p2=self.target.project_id,
-            id2=self.target.iid,
-            u1=self.source.uid,
-            u2=self.target.uid,
-            t=self.type
-        )
-
-    def __eq__(self, other):
-        if self.source.uid == other.target.uid:
-            return True
-        return False
 
 
 RelatedList = list[Link]

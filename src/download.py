@@ -28,7 +28,7 @@ def main():
     (epics_raw, issues) = download()
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
-    links_related, links_blocking, links_parent = parse_links(issues)
+    links_related, links_blocking, links_parent = aggregate_links(issues)
 
     # dump
     print("***")
@@ -145,6 +145,19 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
         if widget["hasParent"]:
             parent = int(widget["parent"]["id"].split("/")[-1])
 
+    # Parse links into serializable objects already (to facilitate caching)
+    links: list[Link] = []
+    for link in iss.links.list():
+        if link.link_type == 'is_blocked_by':
+            links.append(Link(link.id, iss.id, Link_Type.BLOCKS))
+        elif link.link_type == 'blocks':
+            link = Link(iss.id, link.id, Link_Type.BLOCKS)
+        elif link.link_type == 'relates_to':
+                link = Link(iss.id, link.id, Link_Type.RELATES_TO)
+        links.append(link)
+    if parent is not None:
+        links.append(Link(iss.id, parent, Link_Type.IS_CHILD_OF))
+
     wi = Issue(
         uid=iss.id,
         iid=iss.iid,
@@ -154,7 +167,7 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
             "closed": Status.CLOSED,
             "opened": Status.OPENED,
         }[iss.state],
-        links=iss.links.list(),
+        links=links,
         url=iss.web_url,
         has_iteration=bool(getattr(iss, "iteration", [])),
         epic_id=getattr(iss, "epic_iid", None),
@@ -196,49 +209,27 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
     return {item.uid: item for item in epics_parsed}
 
 
-def parse_links(issues: Mapping[int, Issue]) -> tuple[list[Link], list[Link], list[Link]]:
+def aggregate_links(issues: Mapping[int, Issue]) -> tuple[list[Link], list[Link], list[Link]]:
     print("'************\n\n************\nLinking...")
-    verbose = False
-    links_blocking: list[Link] = []
-    links_related: list[Link] = []
-    links_parent: list[Link] = []
+    links = {
+        Link_Type.BLOCKS: [],
+        Link_Type.RELATES_TO: [],
+        Link_Type.IS_CHILD_OF: [],
+    }
 
     for src in issues.values():
         for link in src.links:
-            dst = issues.get(link.id)
+            dst = issues.get(link.target)
             if dst is None:
-                _log.warning("Can't find target %s of link in %i/%i (%s).", link.id, src.project_id, src.iid, src.title)
+                _log.warning("Can't find target %s of link in %i/%i (%s).", link.target, src.project_id, src.iid, src.title)
                 continue
+            links[link.type].append(link)
 
-            if link.link_type == 'is_blocked_by':
-                print("skip\n" if verbose else "s", end='')
-                break
-            elif link.link_type == 'blocks':
-                # here we have a blocker
-                link_conv = Link(src, dst, Link_Type.BLOCKS)
-                links_blocking.append(link_conv)
-                print(f"Added: {link_conv}\n" if verbose else ".", end="")
-
-            elif link.link_type == 'relates_to':
-                # check for duplication
-                dub = False
-                for l in links_related:
-                    if l.target is None:
-                        dub = True
-                    if l.target.uid == src.uid:
-                        dub = True
-
-                if not dub:
-                    link_conv = Link(src, dst, Link_Type.RELATES_TO)
-                    links_related.append(link_conv)
-
-                print(f"Added: {link_conv}\n" if verbose else ".", end="")
-
-        if src.parent:
-            links_parent.append(Link(src, issues.get(src.parent), Link_Type.IS_CHILD_OF))
-
-    _log.info("Found %i relations, %i blocking and %i parent relationships.", len(links_related), len(links_blocking), len(links_parent))
-    return links_related, links_blocking, links_parent
+    rel = links[Link_Type.RELATES_TO]
+    blo = links[Link_Type.BLOCKS]
+    chi = links[Link_Type.IS_CHILD_OF]
+    _log.info("Found %i relations, %i blocking and %i parent relationships.", len(rel), len(blo), len(chi))
+    return rel, blo, chi
 
 
 if __name__ == "__main__":

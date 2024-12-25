@@ -130,16 +130,13 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
         #                       style='invis', )
 
     for link in list_related:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}")
+        graph_issues.edge(str(link.source), str(link.target))
 
     for link in list_blocks:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}", dir='backward')
+        graph_issues.edge(str(link.source), str(link.target), dir='backward')
 
     for link in list_parent:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}", dir='forward')
+        graph_issues.edge(str(link.source), str(link.target), dir='forward')
 
     if exclude_closed_issues:
         graph_issues.render('../renders/issues_slim', format='svg', view=False)
