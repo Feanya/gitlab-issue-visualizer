@@ -58,7 +58,7 @@ def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[in
     project_group = gl.groups.get(group_no)
     print(f"Downloading things from {url}, group {group_no} \"{project_group.name}\"...")
 
-    projects = project_group.projects.list()
+    projects = project_group.projects.list(all=True)
     print("** Projects in group: ({n}) **".format(n=len(projects)))
 
     try:
@@ -70,21 +70,20 @@ def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[in
 
     projects_conf = config['projects']
     if not projects_conf:
-        projects_take = projects
+        projects_take = [p.id for p in projects]
     else:
-        projects_take = projects_conf
+        projects_take = [p['project_no'] for p in projects_conf]
     print(f"** Requesting Issues in {len(projects_take)} projects...**")
 
     issues: dict[int, Issue] = {}
-    for p in projects_take:
-        pid = p['project_no']
+    for pid in projects_take:
         fp_savefile = pickle_folder / f"issues_{pid}.p"
         if fp_savefile.exists():
             with open(fp_savefile, "rb") as pfile:
                 pissues = pickle.load(pfile)
             _log.info("Loaded %i issues from %s.", len(pissues), fp_savefile)
         else:
-            pissues = download_project_issues(gl, gq, p['project_no'])
+            pissues = download_project_issues(gl, gq, pid)
             with open(fp_savefile, "wb") as pfile:
                 pickle.dump(pissues, pfile)
             _log.info("Cached %i issues in %s.", len(pissues), fp_savefile)
