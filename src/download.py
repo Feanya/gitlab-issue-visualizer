@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from typing import Mapping, Sequence
@@ -42,6 +43,17 @@ def main():
     print("***")
 
 
+def iter_projects(gl: gitlab.Gitlab, group_no: int):
+    grp = gl.groups.get(group_no)
+    _log.info("Listing projects in %s", grp.full_path)
+    for p in grp.projects.list(all=True):
+        yield p
+    for dg in grp.descendant_groups.list(all=True):
+        for p in iter_projects(gl, dg.get_id()):
+            yield p
+    return
+
+
 def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
     # private token or personal token authentication (GitLab.com)
 
@@ -55,16 +67,15 @@ def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[in
     print("Successful!")
 
     group_no = config['server']['group_no']
-    project_group = gl.groups.get(group_no)
-    print(f"Downloading things from {url}, group {group_no} \"{project_group.name}\"...")
+    projects = list(iter_projects(gl, group_no))
+    with open(pickle_folder / "projects.json", "w") as jfile:
+        json.dump({p.id : p.name for p in projects}, jfile, indent=4)
+    _log.info("Found %i projects.", len(projects))
 
-    projects = project_group.projects.list(all=True)
-    print("** Projects in group: ({n}) **".format(n=len(projects)))
-
-    try:
-        epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
-    except gitlab.exceptions.GitlabListError:
-        epics_raw = []
+    # try:
+    #     epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
+    # except gitlab.exceptions.GitlabListError:
+    epics_raw = []
     print("** Epics in group: ({n}) **".format(n=len(epics_raw)))
 
 
