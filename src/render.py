@@ -134,12 +134,18 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
         #                       style='invis', )
 
     for link in list_related:
+        if link.source not in issues or link.target not in issues:
+            continue
         graph_issues.edge(str(link.source), str(link.target))
 
     for link in list_blocks:
+        if link.source not in issues or link.target not in issues:
+            continue
         graph_issues.edge(str(link.source), str(link.target), dir='backward')
 
     for link in list_parent:
+        if link.source not in issues or link.target not in issues:
+            continue
         graph_issues.edge(str(link.source), str(link.target), dir='forward')
 
     if exclude_closed_issues:
