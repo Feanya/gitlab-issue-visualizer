@@ -48,7 +48,7 @@ def main():
 
     print("Generate issue overview...")
     render_issues_with_links(issues, epics, links_related, links_blocking, links_parent)
-    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent, exclude_closed_issues=True)
+    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent, exclude_closed_issues=True, save_as="issues-slim")
 
     print("Done!")
 
@@ -86,8 +86,15 @@ def cluster_epics(epics: dict[int, Epic]) -> tuple[dict[int, list[Epic]], list[E
     return clusters, epics_without_cluster
 
 
-def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], list_related: RelatedList,
-                             list_blocks: BlockList, list_parent: Sequence[Link], exclude_closed_issues=False):
+def render_issues_with_links(
+    issues: dict[int, Issue],
+    epics: dict[int, Epic],
+    list_related: RelatedList,
+    list_blocks: BlockList,
+    list_parent: Sequence[Link],
+    exclude_closed_issues=False,
+    save_as: str="issues",
+) -> Path:
     """Render issues.svg: all issues with their epics and dependencies between the issues"""
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
@@ -148,10 +155,9 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
             continue
         graph_issues.edge(str(link.source), str(link.target), dir='forward')
 
-    if exclude_closed_issues:
-        graph_issues.render('../renders/issues_slim', format='svg', view=False)
-    else:
-        graph_issues.render('../renders/issues', format='svg', view=False)
+    outpath = str(Path(__file__).parent.parent / "renders" / save_as)
+    graph_issues.render(str(outpath), format='svg', view=False)
+    return Path(outpath + ".svg")
 
 
 def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, Epic],
