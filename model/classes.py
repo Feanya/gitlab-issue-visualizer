@@ -52,6 +52,7 @@ class Issue:
     title: str
     status: Status
     links: list[Link]
+    labels: set[str]
     url: str
     has_iteration: bool
     epic_id: Optional[int]

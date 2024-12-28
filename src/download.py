@@ -125,20 +125,20 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
         #state
         #webUrl
         widgets {
-        #... on WorkItemWidgetLabels {
-        #    labels {
-        #    nodes {
-        #        id
-        #        title
-        #        description
-        #        color
-        #        textColor
-        #        __typename
-        #    }
-        #    __typename
-        #    }
-        #    __typename
-        #}
+        ... on WorkItemWidgetLabels {
+            labels {
+                nodes {
+                    #id
+                    title
+                    #description
+                    #color
+                    #textColor
+                    __typename
+                }
+            __typename
+            }
+            __typename
+        }
         #... on WorkItemWidgetTimeTracking {
         #    timeEstimate
         #    totalTimeSpent
@@ -163,11 +163,15 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
     res = client.execute(q)
     # Extract parent issues from the corresponding entry in the widget list
     parent = None
+    labels: set[str] = {}
     for widget in res["workItem"]["widgets"]:
-        if widget["__typename"] != "WorkItemWidgetHierarchy":
-            continue
-        if widget["hasParent"]:
-            parent = int(widget["parent"]["id"].split("/")[-1])
+        wtype = widget["__typename"]
+        if wtype == "WorkItemWidgetHierarchy":
+            if widget["hasParent"]:
+                parent = int(widget["parent"]["id"].split("/")[-1])
+        elif wtype == "WorkItemWidgetLabels":
+            labels = {l["title"] for l in widget["labels"]["nodes"]}
+
 
     # Parse links into serializable objects already (to facilitate caching)
     links: list[Link] = []
@@ -192,6 +196,7 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
             "opened": Status.OPENED,
         }[iss.state],
         links=links,
+        labels=labels,
         url=iss.web_url,
         has_iteration=bool(getattr(iss, "iteration", [])),
         epic_id=getattr(iss, "epic_iid", None),
