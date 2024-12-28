@@ -8,7 +8,6 @@ import pickle
 from pathlib import Path
 import time
 
-import mock.data
 from model.classes import Issue, Link, RelatedList, BlockList, Status, Epic
 from src.utils import time_string
 from src.graph import EpicGraph
@@ -20,25 +19,17 @@ opened_only = False
 
 test = False
 
-if not test:
-    with open("../settings/config.toml", mode="rb") as filehandle:
-        config = tomllib.load(filehandle)
-else:
-    with open("../settings/config.example.toml", mode="rb") as filehandle:
-        config = tomllib.load(filehandle)
+with open("../settings/config.toml", mode="rb") as filehandle:
+    config = tomllib.load(filehandle)
 
 
 def main():
-    if not test:
-        print("Read the pickles...")
-        issues: dict[int, Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
-        epics: dict[int, Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
-        links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
-        links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
-        links_parent: list[Link] = pickle.load(open("../pickles/links_parent.p", 'rb'))
-    else:
-        issues = mock.data.get_issues()
-        epics = mock.data.get_epics()
+    print("Read the pickles...")
+    issues: dict[int, Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
+    epics: dict[int, Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
+    links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
+    links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
+    links_parent: list[Link] = pickle.load(open("../pickles/links_parent.p", 'rb'))
 
     Path("../renders").mkdir(parents=True, exist_ok=True)
 
