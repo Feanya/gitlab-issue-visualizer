@@ -22,8 +22,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 projects_raw = []
+DP_ROOT = Path(__file__).parent.parent
 
-with open("../settings/config.toml", mode="rb") as filehandle:
+with open(DP_ROOT / "settings" / "config.toml", mode="rb") as filehandle:
     config = tomllib.load(filehandle)
 
 
@@ -36,12 +37,13 @@ def main():
     # dump
     print("***")
     print("Dump parsed stuff")
-    Path("../pickles").mkdir(parents=True, exist_ok=True)
-    pickle.dump(issues, open("../pickles/issues_conv.p", "wb"))
-    pickle.dump(links_related, open("../pickles/links_related.p", "wb"))
-    pickle.dump(links_blocking, open("../pickles/links_blocking.p", "wb"))
-    pickle.dump(links_parent, open("../pickles/links_parent.p", "wb"))
-    pickle.dump(epics, open("../pickles/epics_conv.p", "wb"))
+    dp_pickles = Path(DP_ROOT / "pickles")
+    dp_pickles.mkdir(parents=True, exist_ok=True)
+    pickle.dump(issues, open(dp_pickles / "issues_conv.p", "wb"))
+    pickle.dump(links_related, open(dp_pickles / "links_related.p", "wb"))
+    pickle.dump(links_blocking, open(dp_pickles / "links_blocking.p", "wb"))
+    pickle.dump(links_parent, open(dp_pickles / "links_parent.p", "wb"))
+    pickle.dump(epics, open(dp_pickles / "epics_conv.p", "wb"))
     print("***")
 
 
