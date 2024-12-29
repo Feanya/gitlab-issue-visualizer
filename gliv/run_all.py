@@ -2,7 +2,7 @@ import time
 
 import download
 import render
-from src import time_string
+from gliv.utils import time_string
 
 if __name__ == "__main__":
     print("Start download and parsing")
