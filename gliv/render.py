@@ -1,6 +1,4 @@
-import sys
 from typing import Sequence
-sys.path.append("..")
 
 import tomllib
 import graphviz
@@ -8,9 +6,9 @@ import pickle
 from pathlib import Path
 import time
 
-from model.classes import Issue, Link, RelatedList, BlockList, Status, Epic
-from src.utils import time_string
-from src.graph import EpicGraph
+from gliv.classes import Issue, Link, RelatedList, BlockList, Status, Epic
+from gliv.utils import time_string
+from gliv.graph import EpicGraph
 
 weight_epics = '30'
 weight_relations = '10'

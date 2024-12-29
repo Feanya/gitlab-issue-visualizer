@@ -1,4 +1,4 @@
-from model.classes import *
+from gliv.classes import *
 
 
 def get_epics() -> dict[int, Epic]:

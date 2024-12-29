@@ -1,5 +1,5 @@
-from model.classes import Epic
-from src.utils import dict_string
+from gliv.classes import Epic
+from gliv.utils import dict_string
 
 
 class EpicGraph:

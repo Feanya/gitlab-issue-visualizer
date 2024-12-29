@@ -1,12 +1,10 @@
 import json
 import logging
-import sys
-from typing import Mapping, Sequence
+from typing import Mapping
 
 import gitlab.v4
 import gitlab.v4.objects
 from rich.progress import track
-sys.path.append("..")
 
 import gitlab
 import pickle
@@ -14,8 +12,8 @@ import tomllib
 from pathlib import Path
 import time
 
-from model.classes import *
-from src.utils import time_string
+from gliv.classes import Issue, Link, Link_Type, Status, Epic
+from gliv.utils import time_string
 
 _log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
