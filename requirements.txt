@@ -1,4 +1,4 @@
-python-gitlab~=5.2.0
+python-gitlab[graphql]~=5.2.0
 graphviz~=0.20.3
 rich
 streamlit

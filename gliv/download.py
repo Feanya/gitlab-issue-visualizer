@@ -27,6 +27,9 @@ with open(DP_ROOT / "settings" / "config.toml", mode="rb") as filehandle:
 
 
 def main():
+    dp_pickles = Path(DP_ROOT / "pickles")
+    dp_pickles.mkdir(parents=True, exist_ok=True)
+
     (epics_raw, issues) = download(pickle_folder=Path(__file__).parent.parent / "pickles")
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
@@ -35,8 +38,6 @@ def main():
     # dump
     print("***")
     print("Dump parsed stuff")
-    dp_pickles = Path(DP_ROOT / "pickles")
-    dp_pickles.mkdir(parents=True, exist_ok=True)
     pickle.dump(issues, open(dp_pickles / "issues_conv.p", "wb"))
     pickle.dump(links_related, open(dp_pickles / "links_related.p", "wb"))
     pickle.dump(links_blocking, open(dp_pickles / "links_blocking.p", "wb"))
