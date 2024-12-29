@@ -1,10 +1,25 @@
+import json
+import logging
+import sys
+from typing import Mapping, Sequence
+
+import gitlab.v4
+import gitlab.v4.objects
+from rich.progress import track
+sys.path.append("..")
+
 import gitlab
 import pickle
 import tomllib
 from pathlib import Path
-
+import time
 
 from model.classes import *
+from src.utils import time_string
+
+_log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 projects_raw = []
 
@@ -13,12 +28,10 @@ with open("../settings/config.toml", mode="rb") as filehandle:
 
 
 def main():
-    (epics_raw, issues_raw) = download()
+    (epics_raw, issues) = download(pickle_folder=Path(__file__).parent.parent / "pickles")
     epics: dict[int, Epic] = parse_epics(epics_raw)
     #print(epics)
-    issues: dict[int, Issue] = parse_issues(issues_raw)
-    #print(issues)
-    links_related, links_blocking = parse_links(issues_raw, issues)
+    links_related, links_blocking, links_parent = aggregate_links(issues)
 
     # dump
     print("***")
@@ -27,88 +40,174 @@ def main():
     pickle.dump(issues, open("../pickles/issues_conv.p", "wb"))
     pickle.dump(links_related, open("../pickles/links_related.p", "wb"))
     pickle.dump(links_blocking, open("../pickles/links_blocking.p", "wb"))
+    pickle.dump(links_parent, open("../pickles/links_parent.p", "wb"))
     pickle.dump(epics, open("../pickles/epics_conv.p", "wb"))
     print("***")
 
 
-def download():
+def iter_projects(gl: gitlab.Gitlab, group_no: int):
+    grp = gl.groups.get(group_no)
+    _log.info("Listing projects in %s", grp.full_path)
+    for p in grp.projects.list(all=True):
+        yield p
+    for dg in grp.descendant_groups.list(all=True):
+        for p in iter_projects(gl, dg.get_id()):
+            yield p
+    return
+
+
+def download(pickle_folder: Path) -> tuple[list[gitlab.base.RESTObject], dict[int, Issue]]:
     # private token or personal token authentication (GitLab.com)
 
     url = config['server']['url']
 
     gl = gitlab.Gitlab(url, config['server']['private_token'])
+    gq = gitlab.GraphQL(url, token=config['server']['private_token'])
 
     print("Authenticate...")
     gl.auth()
     print("Successful!")
 
     group_no = config['server']['group_no']
-    project_group = gl.groups.get(group_no)
-    print(f"Downloading things from {url}, group {group_no} \"{project_group.name}\"...")
+    projects = list(iter_projects(gl, group_no))
+    with open(pickle_folder / "projects.json", "w") as jfile:
+        json.dump({p.id : p.name for p in projects}, jfile, indent=4)
+    _log.info("Found %i projects.", len(projects))
 
-    projects = project_group.projects.list()
-    print("** Projects in group: ({n}) **".format(n=len(projects)))
-
-    epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
+    # try:
+    #     epics_raw = [e for e in project_group.epics.list(get_all=True, scope='all')]
+    # except gitlab.exceptions.GitlabListError:
+    epics_raw = []
     print("** Epics in group: ({n}) **".format(n=len(epics_raw)))
 
 
     projects_conf = config['projects']
-    print(f"** Requesting Issues in {len(projects_conf)} projects...**")
+    if not projects_conf:
+        projects_take = [p.id for p in projects]
+    else:
+        projects_take = [p['project_no'] for p in projects_conf]
+    print(f"** Requesting Issues in {len(projects_take)} projects...**")
 
-    issues_raw = []
-    for p in projects_conf:
-        name = p['name']
-        number = p['project_no']
-
-        issues_project = gl.projects.get(number).issues.list(get_all=True, scope='all')
-        issues_raw = issues_raw + issues_project
-
-        print(f"** Issues {name}: ({len(issues_project)}) **")
-
-    return epics_raw, issues_raw
-
-
-def parse_issues(issues_from_gl) -> dict[int, Issue]:
-    issue_dict = {}
-    print(f"Parsing {len(issues_from_gl)} issues...")
-    i = 0
-    for issue in issues_from_gl:
-        if issue.state == 'opened':
-            s = Status.OPENED
+    issues: dict[int, Issue] = {}
+    for pid in projects_take:
+        fp_savefile = pickle_folder / f"issues_{pid}.p"
+        if fp_savefile.exists():
+            with open(fp_savefile, "rb") as pfile:
+                pissues = pickle.load(pfile)
+            _log.info("Loaded %i issues from %s.", len(pissues), fp_savefile)
         else:
-            s = Status.CLOSED
+            pissues = download_project_issues(gl, gq, pid)
+            with open(fp_savefile, "wb") as pfile:
+                pickle.dump(pissues, pfile)
+            _log.info("Cached %i issues in %s.", len(pissues), fp_savefile)
+        issues.update(pissues)
 
-        if issue.iteration is None:
-            has_iteration = False
-        else:
-            has_iteration = True
+    return epics_raw, issues
 
-        issue_conv = Issue(s,
-                           issue.id,
-                           issue.iid,
-                           issue.project_id,
-                           issue.epic_iid,
-                           issue.title,
-                           issue.web_url,
-                           has_iteration)
 
-        if not issue.links.list():
-            setattr(issue_conv, 'has_no_links', True)
+def download_project_issues(gl: gitlab.Gitlab, gq: gitlab.GraphQL, project_id: int) -> dict[int, Issue]:
+    issues = {}
+    gl_issues = gl.projects.get(project_id).issues.list(all=True)
+    for riss in track(gl_issues, description=f"Project {project_id}..."):
+        issues[riss.id] = to_issue(riss, gq)
 
-        issue_dict[issue.id] = issue_conv
-        i = i + 1
-        if i == 20:
-            print('.', end='')
-            i = 0
-    print('')
+    print(f"** Issues in project {project_id}: ({len(issues)}) **")
+    return issues
 
-    return issue_dict
+
+def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Issue:
+    q = """
+    query workItem {
+    workItem(id: "gid://gitlab/WorkItem/%i") {
+        #id
+        #iid
+        #title
+        #state
+        #webUrl
+        widgets {
+        ... on WorkItemWidgetLabels {
+            labels {
+                nodes {
+                    #id
+                    title
+                    #description
+                    #color
+                    #textColor
+                    __typename
+                }
+            __typename
+            }
+            __typename
+        }
+        #... on WorkItemWidgetTimeTracking {
+        #    timeEstimate
+        #    totalTimeSpent
+        #    __typename
+        #}
+        ... on WorkItemWidgetHierarchy {
+            hasParent
+            parent {
+                id
+                #iid
+                #title
+            }
+            __typename
+        }
+        __typename
+        }
+        __typename
+    }
+    __typename
+    }
+    """ % (iss.id,)
+    res = client.execute(q)
+    # Extract parent issues from the corresponding entry in the widget list
+    parent = None
+    labels: set[str] = {}
+    for widget in res["workItem"]["widgets"]:
+        wtype = widget["__typename"]
+        if wtype == "WorkItemWidgetHierarchy":
+            if widget["hasParent"]:
+                parent = int(widget["parent"]["id"].split("/")[-1])
+        elif wtype == "WorkItemWidgetLabels":
+            labels = {l["title"] for l in widget["labels"]["nodes"]}
+
+
+    # Parse links into serializable objects already (to facilitate caching)
+    links: list[Link] = []
+    for link in iss.links.list():
+        if link.link_type == 'is_blocked_by':
+            links.append(Link(link.id, iss.id, Link_Type.BLOCKS))
+        elif link.link_type == 'blocks':
+            link = Link(iss.id, link.id, Link_Type.BLOCKS)
+        elif link.link_type == 'relates_to':
+                link = Link(iss.id, link.id, Link_Type.RELATES_TO)
+        links.append(link)
+    if parent is not None:
+        links.append(Link(iss.id, parent, Link_Type.IS_CHILD_OF))
+
+    wi = Issue(
+        uid=iss.id,
+        iid=iss.iid,
+        project_id=iss.project_id,
+        title=iss.title,
+        status={
+            "closed": Status.CLOSED,
+            "opened": Status.OPENED,
+        }[iss.state],
+        links=links,
+        labels=labels,
+        url=iss.web_url,
+        has_iteration=bool(getattr(iss, "iteration", [])),
+        epic_id=getattr(iss, "epic_iid", None),
+        parent=parent,
+    )
+    return wi
 
 
 def parse_epics(epics_from_gl) -> dict[int, Epic]:
     print("Parsing epics...")
-    epics_parsed: [Epic] = []
+    epics_parsed: list[Epic] = []
     for epic in epics_from_gl:
         if epic.state == 'opened':
             s = Status.OPENED
@@ -139,41 +238,32 @@ def parse_epics(epics_from_gl) -> dict[int, Epic]:
     return {item.uid: item for item in epics_parsed}
 
 
-def parse_links(issues_raw, issues) -> ([Link], [Link]):
+def aggregate_links(issues: Mapping[int, Issue]) -> tuple[list[Link], list[Link], list[Link]]:
     print("'************\n\n************\nLinking...")
-    verbose = False
-    links_blocking = []
-    links_related = []
+    links = {
+        Link_Type.BLOCKS: [],
+        Link_Type.RELATES_TO: [],
+        Link_Type.IS_CHILD_OF: [],
+    }
 
-    for issue in issues_raw:
-        links = issue.links.list()
-        for link in links:
-            if link.link_type == 'is_blocked_by':
-                print("skip\n" if verbose else "s", end='')
-                break
-            elif link.link_type == 'blocks':
-                # here we have a blocker
-                link_conv = Link(issues.get(issue.id), issues.get(link.id), Link_Type.BLOCKS)
-                links_blocking.append(link_conv)
-                print(f"Added: {link_conv}\n" if verbose else ".", end="")
+    for src in issues.values():
+        for link in src.links:
+            dst = issues.get(link.target)
+            if dst is None:
+                _log.warning("Can't find target %s of link in %i/%i (%s).", link.target, src.project_id, src.iid, src.title)
+                continue
+            links[link.type].append(link)
 
-            elif link.link_type == 'relates_to':
-                # check for duplication
-                dub = False
-                for l in links_related:
-                    if l.target is None:
-                        print(l)
-                        break
-                    if l.target.uid == issue.id:
-                        dub = True
-
-                if not dub:
-                    link_conv = Link(issues.get(issue.id), issues.get(link.id), Link_Type.RELATES_TO)
-                    links_related.append(link_conv)
-
-                print(f"Added: {link_conv}\n" if verbose else ".", end="")
-    return links_related, links_blocking
+    rel = links[Link_Type.RELATES_TO]
+    blo = links[Link_Type.BLOCKS]
+    chi = links[Link_Type.IS_CHILD_OF]
+    _log.info("Found %i relations, %i blocking and %i parent relationships.", len(rel), len(blo), len(chi))
+    return rel, blo, chi
 
 
 if __name__ == "__main__":
+    start = time.time()
     main()
+    finish = time.time()
+    time_taken = finish - start
+    print(f"download.py took {time_string(time_taken)}")
