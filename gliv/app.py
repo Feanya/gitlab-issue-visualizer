@@ -1,14 +1,12 @@
 import base64
 import json
 import pickle
-import sys
 from pathlib import Path
 
 import streamlit as st
 
-sys.path.append("..")
-from model.classes import Issue, Link, Status
-import render
+from gliv.classes import Issue, Link, Status
+from gliv import render
 
 DP_PICKLES = Path(__file__).parent.parent / "pickles"
 
