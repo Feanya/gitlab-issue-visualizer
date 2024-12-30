@@ -140,11 +140,6 @@ def to_issue(iss: gitlab.v4.objects.ProjectIssue, client: gitlab.GraphQL) -> Iss
             }
             __typename
         }
-        #... on WorkItemWidgetTimeTracking {
-        #    timeEstimate
-        #    totalTimeSpent
-        #    __typename
-        #}
         ... on WorkItemWidgetHierarchy {
             hasParent
             parent {
@@ -260,6 +255,28 @@ def aggregate_links(issues: Mapping[int, Issue]) -> tuple[list[Link], list[Link]
     chi = links[Link_Type.IS_CHILD_OF]
     _log.info("Found %i relations, %i blocking and %i parent relationships.", len(rel), len(blo), len(chi))
     return rel, blo, chi
+
+
+def get_timelogs(client: gitlab.GraphQL, fullPath: str, start_date: str, end_date: str):
+    q = """
+    query {
+    group(fullPath:"%s") {
+        fullPath
+        timelogs(startDate: "%s", endDate: "%s") {
+        nodes {
+            timeSpent,
+            spentAt,
+            summary,
+            user{username},
+            issue{id,webUrl,labels{nodes{title}}},
+            mergeRequest{id,webUrl,labels{nodes{title}}},
+        }
+        }
+    } 
+    }
+    """ % (fullPath, start_date, end_date)
+    res = client.execute(q)
+    return res
 
 
 if __name__ == "__main__":
