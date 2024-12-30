@@ -36,6 +36,12 @@ def run():
     links_blocking: list[Link] = pickle.load(open(DP_PICKLES / "links_blocking.p", 'rb'))
     links_parent: list[Link] = pickle.load(open(DP_PICKLES / "links_parent.p", 'rb'))
 
+    known_labels = {
+        l
+        for i in issues.values()
+        for l in i.labels
+    }
+
     # Graph customization settings
     pnames_pids = {pname:pid for pid,pname in get_projects().items()}
     pnames_selected = st.sidebar.multiselect(
@@ -50,11 +56,22 @@ def run():
         index=2,
     )
     graph_zoom = st.sidebar.slider("Zoom factor", min_value=1.0, max_value=3.0, value=1.0, step=0.1)
+    selected_labels = st.sidebar.multiselect(
+        "Select labels",
+        options=sorted(known_labels),
+        default=known_labels,
+    )
+    show_unlabeled = st.sidebar.checkbox("Include unlabeled issues", value=True)
 
     # Filter according to the user settings
     def issue_filter(i: Issue) -> bool:
         if i.status == Status.CLOSED and with_closed == "hide":
             return False
+        if selected_labels:
+            if not i.labels and show_unlabeled:
+                return True
+            if not any(l in selected_labels for l in i.labels):
+                return False
         return i.project_id in pids_selected
 
     issues_selected = {i:iss for i, iss in issues.items() if issue_filter(iss)}
