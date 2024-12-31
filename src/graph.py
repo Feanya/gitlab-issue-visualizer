@@ -118,20 +118,20 @@ class EpicGraph:
         for root in roots:
             trees.append(self.get_tree(root))
         related_roots = self.get_related_tree_roots(trees)
+        related_roots.sort()
         for i in range(len(related_roots)):
-            a, b = related_roots[i]
-            self.swap_graph_ids(a + 1, b)  # Put b next to a
-            # Update references to future occurrences of (a+1) and b,
-            # to not swap the wrong trees in case they appear more than once.
-            for j in range(i + 1, len(related_roots)):
-                if b == related_roots[j][0]:
-                    related_roots[j] = (a + 1, related_roots[j][1])
-                elif b == related_roots[j][1]:
-                    related_roots[j] = (related_roots[j][0], a + 1)
-                elif (a + 1) == related_roots[j][0]:
-                    related_roots[j] = (b, related_roots[j][1])
-                elif (a + 1) == related_roots[j][1]:
-                    related_roots[j] = (related_roots[j][0], b)
+            roots = related_roots[i]
+            a = roots[0]
+            for j, b in enumerate(roots[1:]):
+                new_index = a + 1 + j
+                self.swap_graph_ids(new_index, b)  # Put b next to a
+
+                related_roots[i][j + 1] = new_index  # update references
+                for k in range(i + 1, len(related_roots)):
+                    if new_index in related_roots[k]:
+                        related_roots[k].remove(new_index)
+                        related_roots[k].append(b)
+                        related_roots[k].sort()
 
     def get_height(self, node_id):
         """Recursively determine the height and parent of the given node.
@@ -175,24 +175,26 @@ class EpicGraph:
             self.tree_widths[node_id] = 1
             return 1
 
+        # uncomment when script crashes because of maximum recursion depth is exceeded
+        # print("epic id:", self.epics[node_id].uid)
+
         self.tree_widths[node_id] = sum([self.get_width(node) for node in next_nodes])
         return self.tree_widths[node_id]
 
     def swap_graph_ids(self, a: int, b: int):
         """Swaps the nodes with the ids a and b"""
 
-        temp = self.epics[a]
-        self.epics[a] = self.epics[b]
-        self.epics[b] = temp
+        self.epics[b], self.epics[a] = self.epics[a], self.epics[b]
+        self.node_heights[b], self.node_heights[a] = self.node_heights[a], self.node_heights[b]
+        self.tree_widths[b], self.tree_widths[a] = self.tree_widths[a], self.tree_widths[b]
 
         list_dicts: list[dict[int, list[int]]] = [self.next, self.previous, self.related,
                                                   self.includes, self.includedBy]
-        int_dicts: list[dict[int, int]] = [self.node_heights, self.node_parents, self.tree_widths]
+        int_dicts: list[dict[int, int]] = [self.node_parents]
+
         for dictionary in list_dicts:
             # swap lists
-            temp = dictionary[a]
-            dictionary[a] = dictionary[b]
-            dictionary[b] = temp
+            dictionary[b], dictionary[a] = dictionary[a], dictionary[b]
             # update all references
             for k, v in dictionary.items():
                 if a in v and b in v:
@@ -203,11 +205,11 @@ class EpicGraph:
                 elif b in v:
                     v.remove(b)
                     v.append(a)
+
         for dictionary in int_dicts:
             # swap lists
-            temp = dictionary[a]
-            dictionary[a] = dictionary[b]
-            dictionary[b] = temp
+            dictionary[b], dictionary[a] = dictionary[a], dictionary[b]
+
             # update all references
             for k, v in dictionary.items():
                 if v == a:
@@ -262,7 +264,7 @@ class EpicGraph:
             linked_nodes.extend(self.get_tree(included))
         return linked_nodes
 
-    def get_related_tree_roots(self, trees: list[list[int]]) -> list[tuple[int, int]]:
+    def get_related_tree_roots(self, trees: list[list[int]]) -> list[list[int]]:
         """Given a list of trees, this function returns a list of pairs of the trees' roots,
         if those trees' nodes are related through any relation."""
         related_trees: list[tuple[int, int]] = []
@@ -280,5 +282,26 @@ class EpicGraph:
                         related_trees.append((i, j))
                         break
 
-        related_tree_roots: list[tuple[int, int]] = [(trees[i][0], trees[j][0]) for (i, j) in related_trees]
-        return related_tree_roots
+        related_tree_roots: list[set[int]] = [{trees[i][0], trees[j][0]} for (i, j) in related_trees]
+        delete_later = []
+        for i in range(0, len(related_tree_roots) - 1):
+            if i in delete_later:
+                continue
+            delete_later_len = -1
+            while (len(delete_later) != delete_later_len):  # Continue until all related trees were found
+                delete_later_len = len(delete_later)
+                for j in range(i + 1, len(related_tree_roots)):
+                    if j in delete_later:
+                        continue
+                    if related_tree_roots[i].intersection(related_tree_roots[j]):
+                        related_tree_roots[i] = related_tree_roots[i].union(related_tree_roots[j])
+                        delete_later.append(j)
+
+        delete_later.sort(reverse=True)
+        for i in delete_later:
+            del related_tree_roots[i]
+
+        related_roots_list = [list(roots) for roots in related_tree_roots]
+        for root_list in related_roots_list:
+            root_list.sort()
+        return related_roots_list

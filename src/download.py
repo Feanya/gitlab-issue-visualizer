@@ -2,9 +2,10 @@ import gitlab
 import pickle
 import tomllib
 from pathlib import Path
-
+import time
 
 from model.classes import *
+from src.utils import time_string
 
 projects_raw = []
 
@@ -176,4 +177,8 @@ def parse_links(issues_raw, issues) -> ([Link], [Link]):
 
 
 if __name__ == "__main__":
+    start = time.time()
     main()
+    finish = time.time()
+    time_taken = finish - start
+    print(f"download.py took {time_string(time_taken)}")
