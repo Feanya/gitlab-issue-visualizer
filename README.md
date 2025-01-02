@@ -2,7 +2,18 @@
 Drawing issue- and epic-dependency graphs and some more useful graphs for Gitlab issues in a Gitlab group. 
 This tool uses graphviz.
 
-I wrote this tool to help with project management.
+Originally [written by @Feanya](https://github.com/Feanya/gitlab-issue-visualizer), this project was extended by an interactive graph filtering in a Streamlit app.
+
+## Usage
+
+First `pip install -e .` the project, and customize `settings/config.toml`.
+
+Then run:
+
+* `python gliv/download.py`
+* `python gliv/render.py`
+* `streamlit run gliv/app.py`
+
 
 ## What can be visualized?
 ### issues & issues_slim: The big issue graph

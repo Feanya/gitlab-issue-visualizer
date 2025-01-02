@@ -1,13 +1,14 @@
+from typing import Sequence
+
 import tomllib
 import graphviz
 import pickle
 from pathlib import Path
 import time
 
-import mock.data
-from model.classes import Issue, RelatedList, BlockList, Status, Epic
-from src.utils import time_string
-from src.graph import EpicGraph
+from gliv.classes import Issue, Link, RelatedList, BlockList, Status, Epic
+from gliv.utils import time_string
+from gliv.graph import EpicGraph
 
 weight_epics = '30'
 weight_relations = '10'
@@ -15,49 +16,57 @@ weight_cluster = '1'
 opened_only = False
 
 test = False
+DP_ROOT = Path(__file__).parent.parent
 
-if not test:
-    with open("../settings/config.toml", mode="rb") as filehandle:
-        config = tomllib.load(filehandle)
-else:
-    with open("../settings/config.example.toml", mode="rb") as filehandle:
-        config = tomllib.load(filehandle)
+with open(DP_ROOT / "settings" / "config.toml", mode="rb") as filehandle:
+    config = tomllib.load(filehandle)
 
 
 def main():
-    if not test:
-        print("Read the pickles...")
-        issues: dict[int, Issue] = pickle.load(open("../pickles/issues_conv.p", 'rb'))
-        epics: dict[int, Epic] = pickle.load(open("../pickles/epics_conv.p", 'rb'))
-        links_related: RelatedList = pickle.load(open("../pickles/links_related.p", 'rb'))
-        links_blocking: BlockList = pickle.load(open("../pickles/links_blocking.p", 'rb'))
-    else:
-        issues = mock.data.get_issues()
-        epics = mock.data.get_epics()
+    print("Read the pickles...")
+    dp_pickles = DP_ROOT / "pickles"
+    issues: dict[int, Issue] = pickle.load(open(dp_pickles / "issues_conv.p", 'rb'))
+    epics: dict[int, Epic] = pickle.load(open(dp_pickles / "epics_conv.p", 'rb'))
+    links_related: RelatedList = pickle.load(open(dp_pickles / "links_related.p", 'rb'))
+    links_blocking: BlockList = pickle.load(open(dp_pickles / "links_blocking.p", 'rb'))
+    links_parent: list[Link] = pickle.load(open(dp_pickles / "links_parent.p", 'rb'))
 
-    Path("../renders").mkdir(parents=True, exist_ok=True)
+    (DP_ROOT / "renders").mkdir(parents=True, exist_ok=True)
+
+    print("Deduplicating undirected relationships...")
+    links_related = deduplicate_links(links_related)
 
     # print("Generate epic overview...")
     # render_epics_clustered(epics)
 
-    print("Generate epic relationship overview...")
-    render_epic_relationships(epics)
+    # print("Generate epic relationship overview...")
+    # render_epic_relationships(epics)
 
     # print("Generate issue overview, clustered by epics...")
     # render_issues_clustered_by_epic(issues, epics)
     # render_issues_clustered_by_epic(issues, epics, True)
 
-    # print("Generate issue overview...")
-    # render_issues_with_links(issues, epics, links_related, links_blocking)
-    # render_issues_with_links(issues, epics, links_related, links_blocking, True)
+    print("Generate issue overview...")
+    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent)
+    render_issues_with_links(issues, epics, links_related, links_blocking, links_parent, exclude_closed_issues=True, save_as="issues-slim")
 
     print("Done!")
 
 
-def cluster_epics(epics: dict[int, Epic]) -> (dict[int, [Epic]], [Epic]):
+def deduplicate_links(links: Sequence[Link]) -> list[Link]:
+    # Take all parent/child relationships
+    filtered = []
+    for l in links:
+        if any(f == l for f in filtered):
+            continue
+        filtered.append(l)
+    return filtered
+
+
+def cluster_epics(epics: dict[int, Epic]) -> tuple[dict[int, list[Epic]], list[Epic]]:
     # construct empty clusters
-    clusters: dict[int, [Epic]] = {c['id']: [] for c in config['clusters']}
-    epics_without_cluster: [Epic] = []
+    clusters: dict[int, list[Epic]] = {c['id']: [] for c in config['clusters']}
+    epics_without_cluster: list[Epic] = []
 
     # sort epics in clusters
     for epic in epics.values():
@@ -77,8 +86,15 @@ def cluster_epics(epics: dict[int, Epic]) -> (dict[int, [Epic]], [Epic]):
     return clusters, epics_without_cluster
 
 
-def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], list_related: RelatedList,
-                             list_blocks: BlockList, exclude_closed_issues=False):
+def render_issues_with_links(
+    issues: dict[int, Issue],
+    epics: dict[int, Epic],
+    list_related: RelatedList,
+    list_blocks: BlockList,
+    list_parent: Sequence[Link],
+    exclude_closed_issues=False,
+    save_as: str="issues",
+) -> Path:
     """Render issues.svg: all issues with their epics and dependencies between the issues"""
     graph_issues = graphviz.Digraph(engine='neato',
                                     graph_attr=dict(
@@ -119,23 +135,29 @@ def render_issues_with_links(issues: dict[int, Issue], epics: dict[int, Epic], l
         else:
             add_issue(issue, graph_issues, fillcolor, style, True)
 
-        if not issue.epic_id and issue.has_no_links:
-            graph_issues.edge(f"{issue.uid}",
-                              f"Kein Link oder Epic",
-                              style='invis', )
+        # if not issue.epic_id and issue.has_no_links:
+        #     graph_issues.edge(f"{issue.uid}",
+        #                       f"Kein Link oder Epic",
+        #                       style='invis', )
 
     for link in list_related:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}")
+        if link.source not in issues or link.target not in issues:
+            continue
+        graph_issues.edge(str(link.source), str(link.target))
 
     for link in list_blocks:
-        graph_issues.edge(f"{link.source.uid}",
-                          f"{link.target.uid}", dir='backward')
+        if link.source not in issues or link.target not in issues:
+            continue
+        graph_issues.edge(str(link.source), str(link.target), dir='backward')
 
-    if exclude_closed_issues:
-        graph_issues.render('../renders/issues_slim', format='svg', view=False)
-    else:
-        graph_issues.render('../renders/issues', format='svg', view=False)
+    for link in list_parent:
+        if link.source not in issues or link.target not in issues:
+            continue
+        graph_issues.edge(str(link.source), str(link.target), dir='forward')
+
+    outpath = str(Path(__file__).parent.parent / "renders" / save_as)
+    graph_issues.render(str(outpath), format='svg', view=False)
+    return Path(outpath + ".svg")
 
 
 def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, Epic],
@@ -208,9 +230,9 @@ def render_issues_clustered_by_epic(issues: dict[int, Issue], epics: dict[int, E
                             add_issue(issues[issue_uid], d, 'white')
 
     if exclude_closed_epics:
-        graph_clusters.render('../renders/clustered_issues_by_epic_slim', format='svg', view=False)
+        graph_clusters.render(str(DP_ROOT / "renders") + 'clustered_issues_by_epic_slim', format='svg', view=False)
     else:
-        graph_clusters.render('../renders/clustered_issues_by_epic', format='svg', view=False)
+        graph_clusters.render(str(DP_ROOT / "renders") + 'clustered_issues_by_epic', format='svg', view=False)
 
 
 def render_epics_clustered(epics: dict[int, Epic]):
@@ -255,7 +277,7 @@ def render_epics_clustered(epics: dict[int, Epic]):
                 else:
                     add_epic(epic, c)
 
-    graph_epics.render('../renders/epics', format='svg', view=False)
+    graph_epics.render(str(DP_ROOT / "renders") + 'epics', format='svg', view=False)
 
 
 def render_epic_relationships(epics: dict[int, Epic], horizontal=True):
@@ -352,7 +374,7 @@ def render_epic_relationships(epics: dict[int, Epic], horizontal=True):
                     added_related_edges.append((i, j))
                     added_related_edges.append((j, i))
 
-    dot_graph.render('../renders/epic_relationships', format='svg', view=False)
+    dot_graph.render(str(DP_ROOT / "renders") + 'epic_relationships', format='svg', view=False)
 
 
 def add_epic(epic: Epic, dot: graphviz.Graph, pos: tuple[int, int] = None, graph_id=None):
@@ -392,7 +414,7 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
     # Node für das Issue anlegen
     if not slim_style:
         dot.node(f"{issue.uid}",
-                 "{}/{}\n{}".format(issue.project_id,
+                 "{}/#{}\n{}".format(issue.project_id,
                                     issue.iid,
                                     graphviz.escape(wrap_text(issue.title, 30))),
                  style=style,
@@ -403,7 +425,7 @@ def add_issue(issue: Issue, dot: graphviz.Graph, fillcolor: str, style='filled',
                  fillcolor=fillcolor, )
     else:
         dot.node(f"{issue.uid}",
-                 "{}/{}".format(issue.project_id, issue.iid),
+                 "{}/#{}".format(issue.project_id, issue.iid),
                  style=style,
                  color=color,
                  fontcolor=color,
@@ -431,12 +453,16 @@ def find(clusters, epic_id: int) -> str:
             return name
 
 
-def wrap_text(text: str, min_length: int) -> str:
+def wrap_text(text: str, min_length: int, max_lines: int=2) -> str:
     pos = min_length
+    nlines = 1
     while pos < len(text):
         whitespace = text.find(' ', pos)
         if whitespace > 0:
+            if nlines == max_lines:
+                return text[:whitespace] + "..."
             text = text[:whitespace] + '\n' + text[whitespace + 1:]
+            nlines += 1
         else:
             break
         pos = whitespace + min_length

@@ -1,5 +1,8 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List
+
+import gitlab.base
 
 
 class Status(Enum):
@@ -10,32 +13,50 @@ class Status(Enum):
 class Link_Type(Enum):
     RELATES_TO = 0
     BLOCKS = 1
-    IS_BLOCKED_BY = 2
+    IS_CHILD_OF = 2
 
 
+class Link:
+    source: int
+    target: int
+    type: Link_Type
 
+    def __init__(self, source: int, target: int, type: Link_Type):
+        if target is None:
+            raise ValueError(f"Link in has no target.")
+        self.source = source
+        self.target = target
+        self.type = type
+
+    def __str__(self):
+        return "<Link {src}---{typ}--->{tgt}>".format(
+            src=self.source,
+            tgt=self.target,
+            typ=self.type
+        )
+
+    def __eq__(self, other):
+        if (self.source == other.source and self.target == other.target and self.type == other.type):
+            return True
+        return (
+            self.source == other.target
+            and {self.type, other.type} == {Link_Type.RELATES_TO}
+        )
+
+
+@dataclass
 class Issue:
     uid: int
     iid: int
     project_id: int
     title: str
     status: Status
-    epic_id: int
-    has_no_links: bool
+    links: list[Link]
+    labels: set[str]
     url: str
     has_iteration: bool
-    epic_no: int
-
-    def __init__(self, status, uid, iid, project_id, epic_id, title, url, has_iteration):
-        self.uid = uid
-        self.iid = iid
-        self.project_id = project_id
-        self.title = title
-        self.status = status
-        self.epic_id = epic_id
-        self.url = url
-        self.has_no_links = False
-        self.has_iteration = has_iteration
+    epic_id: Optional[int]
+    parent: Optional[int]
 
     def __str__(self):
         return "{} – {}/{}: {} ({})".format(self.uid, self.project_id, self.iid, self.title, (self.status.name).lower())
@@ -58,7 +79,7 @@ class Epic:
     uid: int
     title: str
     status: Status
-    labels: [str]
+    labels: list[str]
     description: str
     count_closed: int
     count_all_issues: int
@@ -81,36 +102,5 @@ class Epic:
         return "[Epic]: {}: {} ({})".format(self.uid, self.title, self.status.name.lower())
 
 
-
-
-class Link:
-    source: Issue
-    target: Issue
-    type: Link_Type
-
-    def __init__(self, source, target, type):
-        self.source = source
-        self.target = target
-        self.type = type
-    def __str__(self):
-
-        if self.target is None:
-            print(self.source)
-        return "({u1}) {p1}/{id1} {t} ({u2}) {p2}/{id2}".format(
-            p1=self.source.project_id,
-            id1=self.source.iid,
-            p2=self.target.project_id,
-            id2=self.target.iid,
-            u1=self.source.uid,
-            u2=self.target.uid,
-            t=self.type
-        )
-
-    def __eq__(self, other):
-        if self.source.uid == other.target.uid:
-            return True
-        return False
-
-
-RelatedList = [Link]
-BlockList = [Link]
+RelatedList = list[Link]
+BlockList = list[Link]
